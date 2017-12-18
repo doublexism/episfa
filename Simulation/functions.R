@@ -54,11 +54,22 @@ cv_evaluate <- function(nfolds, func, data, ncores = 1,param, ...){
 }
 
 nonZeroLoad <- function(load){
-  for (i in 1:ncol(load)){
-    print(load[,i][load[,i] != 0])
-  }
+  load <- map(1:ncol(load), function(x) x[x != 0])
+  return(load)
 }
 
 
+interSNP <- function(dat){
+  SNPs <- attr(dat, "interact")
+  return(SNPs)
+}
+
+tuneSfa <- function(train, val, nfactor){
+  result <- fanc::fanc(train,
+                       factors = nfactor, 
+                       control = list(openmp = TRUE, num.threads = 8))
+  lists <- c(result$loadings)
+  
+}
 
 

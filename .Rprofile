@@ -9,3 +9,4 @@ source("simulation/functions.R")
 source("simulation/simulate data LE.R")
 
 library(fanc)
+filter <- dplyr::filter

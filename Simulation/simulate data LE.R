@@ -224,7 +224,8 @@ simPopLE <- function(N,
   ## generate outcomes
   if (model == "logistic"){
   X <- as.matrix(df_sib[c("intercept", SNP_names, "sex", "t_age", inter_names, cov_names)])
-  beta <- c(logit(p), 
+  print(colnames(X))
+   beta <- c(logit(p), 
             rep(0, num_SNP), 
             log(sex_effect), 
             log(age_effect), 
@@ -237,7 +238,9 @@ simPopLE <- function(N,
   var_int <- map_dbl(rep(level, num_interact), var_interact, maf=MAF)
   variance <- c(0, rep(2*MAF*(1-MAF), num_SNP), 0.25, age_varb+age_varw ,var_int, diag(cov_sigma))
   #total variance and multiplier
-  total_variance <- sum(variance %*% beta)
+  beta_sq <- beta**2
+  total_variance <- sum(variance %*% beta_sq)
+  print(total_variance)
   lambda_sq <- pi/5.35
   multiplier <- sqrt(1+lambda_sq*total_variance)
   
@@ -255,7 +258,9 @@ simPopLE <- function(N,
   
   # update beta
   beta[1] <- qnorm(p)*multiplier/sqrt(lambda_sq) - offset
+  print(beta)
   df_sib$Y <- logistic_func(X, beta)
+  
   } else if (model == "cox"){
     F0 <- weibull_pf(df_sib$age - age_lower)
     X <- as.matrix(df_sib[c(SNP_names, "sex", inter_names, cov_names)])
@@ -264,7 +269,6 @@ simPopLE <- function(N,
               log(sex_effect), 
               rep(log(interaction_effect), num_interact),
               cov_beta)
-    print(beta)
     df_sib$Y <- cox_func(F0, X, beta)
   }
   ## subsampling
