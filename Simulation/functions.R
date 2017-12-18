@@ -75,6 +75,11 @@ tuneSfa <- function(train, val, nfactor){
   lists <- c(result$loadings)
 }
 
+cv.consistency <- function(episfa.obj, stat){
+  snps <- map(episfa.obj, `[[`,stat)
+  
+}
+
 episfa <- function(x, nfolds){
   # function to extract best gamma and rho
   best_gr <- function(stat, nzl, n = 270){
@@ -101,16 +106,15 @@ episfa <- function(x, nfolds){
       return(NA)
     }
   }
-  
   if(!is.matrix(x)){
     stop("x should be a matrix")
   }
   
   folds <- cvFolds(nrow(x), K=nfolds)
-  
+  # cross validation
   r <- foreach(i=1:nfolds) %do% {
-    train <- data[folds$subsets[folds$which != i], ]
-    validation <- data[folds$subsets[folds$which == i], ]
+    train <- x[folds$subsets[folds$which != i], ]
+    validation <- x[folds$subsets[folds$which == i], ]
     result <- fanc(train, factors = round(0.1*ncol(x)))
     # extract statistics
     loadings <- reduce(result$loadings, c)
@@ -139,14 +143,14 @@ episfa <- function(x, nfolds){
     nz_bic <- nonZeroLoad(loading_bic$loadings, coef = FALSE)
     nz_kl_lasso <- nonZeroLoad(loading_kl_lasso$loadings, coef = FALSE)
     nz_aic_lasso <- nonZeroLoad(loading_aic_lasso$loadings, coef = FALSE)
-    nz_bic_lasso <- nonZeroLoad(loading_bic_lasso$loadings, coef = FALSE)}
+    nz_bic_lasso <- nonZeroLoad(loading_bic_lasso$loadings, coef = FALSE)
     # return results
-    return(list(kl = nz_kl, 
-                aic=nz_bic, 
-                bic = nz_bic, 
-                kl_lasso = nz_kl_lasso, 
-                kl_aic = nz_aic_lasso, 
-                kl_bic = nz_bic_lasso,
+    return(list(nz_kl = nz_kl, 
+                nz_aic=nz_bic, 
+                nz_bic = nz_bic, 
+                nz_kl_lasso = nz_kl_lasso, 
+                nz_kl_aic = nz_aic_lasso, 
+                nz_kl_bic = nz_bic_lasso,
                 loading_kl = loading_kl,
                 loading_aic = loading_aic,
                 loading_bic = loading_bic,
@@ -154,6 +158,8 @@ episfa <- function(x, nfolds){
                 loading_aic_lasso = loading_aic_lasso,
                 loading_bic_lasso = loading_bic_lasso))
   }
+  return(r)
+}
   
   episfa_sim <- function(co = FALSE , sim_control){}
 
