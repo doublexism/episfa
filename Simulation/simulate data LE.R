@@ -224,7 +224,6 @@ simPopLE <- function(N,
   ## generate outcomes
   if (model == "logistic"){
   X <- as.matrix(df_sib[c("intercept", SNP_names, "sex", "t_age", inter_names, cov_names)])
-  print(colnames(X))
    beta <- c(logit(p), 
             rep(0, num_SNP), 
             log(sex_effect), 
@@ -240,7 +239,6 @@ simPopLE <- function(N,
   #total variance and multiplier
   beta_sq <- beta**2
   total_variance <- sum(variance %*% beta_sq)
-  print(total_variance)
   lambda_sq <- pi/5.35
   multiplier <- sqrt(1+lambda_sq*total_variance)
   
@@ -258,7 +256,6 @@ simPopLE <- function(N,
   
   # update beta
   beta[1] <- qnorm(p)*multiplier/sqrt(lambda_sq) - offset
-  print(beta)
   df_sib$Y <- logistic_func(X, beta)
   
   } else if (model == "cox"){

@@ -1,8 +1,8 @@
-pkgs <- c("psych","cvTools","robustbase","svd","tidyverse","rlang","svd","sigmoid","foreach","parallel","data.table")
+pkgs <- c("psych","cvTools","robustbase","svd","tidyverse","rlang","svd","sigmoid","foreach","parallel","data.table","fanc","")
 
 pkgs.required <- pkgs[!pkgs %in% utils::installed.packages()]
 if (length(pkgs.required) != 0){
-  install.packages(pkgs.required)
+  utils::install.packages(pkgs.required)
 }
 
 source("simulation/functions.R")

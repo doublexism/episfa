@@ -1,5 +1,4 @@
-source("D:\\Fangshan\\thesis\\interaction\\Simulation\\simulate data LE.R")
-nsnps <- 50
+nsnps <- 20
 test <- simPopLE(1000, num_SNP = nsnps, 
                      MAF = 0.1,  
                      main_effect = 1.5, 
@@ -10,7 +9,7 @@ test <- simPopLE(1000, num_SNP = nsnps,
                      num_parents = 0, 
                      num_sib = 2, 
                      num_main = 1,
-                     num_interact = 5,
+                     num_interact = 1,
                      model = "logistic",
                      genetic_model = "additive",
                      p = 0.05,
@@ -71,7 +70,9 @@ cor_2 <- cor_dat - cor_control + diag(rep(1,nsnps))
 result <- factanal(factors = 5, rotation = "varimax", covmat = cor_2, n.obs = 2000)
 fa.parallel(cor_2, n.obs = 2000)
 
-result1 <- fanc(factors = 10, covmat = cor_dat, n.obs = nrow(dat),control = list(openmp = TRUE, num.threads = 8))
+result1 <- fanc(factors = 5, covmat = cor_dat, n.obs = nrow(dat),control = list(openmp = TRUE, num.threads = 40))
+
+
 result2 <- fanc(factors = 10, covmat = cor_2, n.obs = nrow(dat), control = list(openmp = TRUE, num.threads = 8))
 
 nfacs <- cv_evaluate(10, qBest,dat,ncores = 3, 1:37)
@@ -83,4 +84,5 @@ cors <- foreach(i = 1:100) %do% {
 }
 cor_bs <- reduce(cors, `+`)/100
 
+result2 <- fanc(factors = 1, covmat = cor_dat,rho = rho1, n.obs = nrow(dat))
 
