@@ -1,4 +1,4 @@
-pkgs <- c("psych","cvTools","robustbase","svd","tidyverse","rlang","svd","sigmoid","foreach","parallel","data.table","fanc","")
+pkgs <- c("psych","cvTools","robustbase","svd","tidyverse","rlang","svd","sigmoid","foreach","parallel","data.table","fanc","doParallel")
 
 pkgs.required <- pkgs[!pkgs %in% utils::installed.packages()]
 if (length(pkgs.required) != 0){

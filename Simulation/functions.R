@@ -1,6 +1,6 @@
 library(psych)
 library(cvTools)
-library(parallel)
+library(doParallel)
 library(tidyverse)
 library(svd)
 library(foreach)
@@ -38,7 +38,7 @@ cv_evaluate <- function(nfolds, func, data, ncores = 1,param, ...){
     stop("fold number must larger than 1")
   }
   #func <- match.fun(func)
-  cl <- makeCluster(ncores)
+  cl <- makeCluster(ncores, rscript_args = c("--no-init-file", "--no-site-file", "--no-environ"))
   registerDoParallel(cl)
   folds <- cvFolds(NROW(data), K=nfolds)
 
@@ -47,8 +47,8 @@ cv_evaluate <- function(nfolds, func, data, ncores = 1,param, ...){
     validation <- data[folds$subsets[folds$which == i], ]
     result <- purrr::map_dbl(param, func, train = train, val = validation,...)
     return(result)
-    stopCluster(cl)
   }
+  
   stopCluster(cl)
   return(r)
 }
