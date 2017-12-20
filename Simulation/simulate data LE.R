@@ -197,11 +197,6 @@ simPopLE <- function(N,
     SNP_idx <- match(SNPs_margin, SNP_names)
     # default effect size for the main effect 
     main <- log(main_effect)
-    if (num_main > 0){
-      SNP_main <- setdiff(SNP_names, SNPs_margin) %>% match(SNP_names) %>% `[`(1:num_main)
-    } else {
-      SNP_main <- NULL
-    }
     # generate marginal effects
     if(!is.null(margin_effect)){
       snp_levels <- map(SNPs_margin, interLevel, snp_list = SNPs)
@@ -212,7 +207,17 @@ simPopLE <- function(N,
     inter_names <- map_chr(SNPs, paste0, collapse = "")
     inter_df <-  map_dfc(SNPs, interTerm, df_sib) %>% setNames(inter_names) 
     df_sib <- inter_df %>% bind_cols(df_sib,.)
+  } else {
+    inter_names <- NULL
+    SNP_idx <- NULL
+    SNPs_margin <- NULL
+    SNPs <- NULL
   }
+  if (num_main > 0){
+    SNP_main <- setdiff(1:num_SNP, SNP_idx) %>% `[`(1:num_main)
+  } else {
+    SNP_main <- NULL
+  } 
   
   ## generate covariates
   cov_names <- paste0("cov",1:num_cov)
@@ -231,15 +236,19 @@ simPopLE <- function(N,
             rep(log(interaction_effect), num_interact),
             cov_beta
             )
-  beta[SNP_idx + 1] <- main
+
+  if (!is.null(SNP_idx)){
+    beta[SNP_idx + 1] <- main
+  }
   beta[SNP_main + 1] <- log(main_effect)
   # calculate variance of linear combination
-  var_int <- map_dbl(rep(level, num_interact), var_interact, maf=MAF)
-  variance <- c(0, rep(2*MAF*(1-MAF), num_SNP), 0.25, age_varb+age_varw ,var_int, diag(cov_sigma))
+  # var_int <- map_dbl(rep(level, num_interact), var_interact, maf=MAF)
+  # print(var_int)
+  variance <- c(0, rep(0, num_SNP), 0, age_varb+age_varw ,rep(0, num_interact), diag(cov_sigma))
   #total variance and multiplier
   beta_sq <- beta**2
   total_variance <- sum(variance %*% beta_sq)
-  lambda_sq <- pi/5.35
+  lambda_sq <- pi/8
   multiplier <- sqrt(1+lambda_sq*total_variance)
   
   #calculate offsets
@@ -253,9 +262,8 @@ simPopLE <- function(N,
       log(sex_effect)*0.5 +
       sum(num_interact*log(interaction_effect)*(2*MAF - 1)**level)
   }
-  
   # update beta
-  beta[1] <- qnorm(p)*multiplier/sqrt(lambda_sq) - offset
+  beta[1] <- (logit(p))*multiplier - offset
   df_sib$Y <- logistic_func(X, beta)
   
   } else if (model == "cox"){

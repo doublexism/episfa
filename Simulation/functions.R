@@ -82,7 +82,106 @@ cv.consistency <- function(episfa.obj, stat){
   
 }
 
-episfa <- function(x, nfolds){
+simPopLE_l2_sp <- function(n, snp_num, maf, p, int_eff, int_lev,int_num, m_eff = NULL){
+          func <- simPopLE(n,
+                     num_SNP = snp_num,
+                     MAF = maf,  
+                     main_effect = 1.5, 
+                     interaction_effect =int_eff, 
+                     margin_effect = m_eff,
+                     cov_effect = 1.2, 
+                     level = int_lev,
+                     num_parents = 0, 
+                     num_sib = 2, 
+                     num_main = 0,
+                     num_interact = int_num,
+                     model = "logistic",
+                     genetic_model = "additive",
+                     p = p,
+                     scale_weibull = 80,
+                     shape_weibull = 4,
+                     age_lower = 20,
+                     age_higher = 80,
+                     sex_effect = 1.2,
+                     age_effect = 1.005,
+                     age_mean = 50,
+                     age_varb = 10,
+                     age_varw = 5,
+                     num_cov = 10,
+                     cov_sigma = NULL)
+          return(func)
+}
+
+
+simPopLE_l2_sp_wp <- function(n, snp_num, maf, p, int_eff, int_lev,int_num, m_eff = NULL){
+  func <- simPopLE(n,
+                   num_SNP = snp_num,
+                   MAF = maf,  
+                   main_effect = 1.5, 
+                   interaction_effect =int_eff, 
+                   margin_effect = m_eff,
+                   cov_effect = 1.2, 
+                   level = int_lev,
+                   num_parents = 2, 
+                   num_sib = 2, 
+                   num_main = 0,
+                   num_interact = int_num,
+                   model = "logistic",
+                   genetic_model = "additive",
+                   p = p,
+                   scale_weibull = 80,
+                   shape_weibull = 4,
+                   age_lower = 20,
+                   age_higher = 80,
+                   sex_effect = 1.2,
+                   age_effect = 1.005,
+                   age_mean = 50,
+                   age_varb = 10,
+                   age_varw = 5,
+                   num_cov = 10,
+                   cov_sigma = NULL)
+  return(func)
+}
+
+
+interForm <- function(SNPs, data, model = "clogit"){
+  require(survival,quietly = TRUE)
+  main <- paste0(SNPs, collapse = "+")
+  inter <- paste0(SNPs, collapse = ":")
+  if (model == "clogit"){
+  form <- paste0("Y ~",main, "+",inter,"+ strata(fid)") %>% 
+    as.formula()
+  res <- summary(clogit(form, data))
+  } else if (model == "glm") {
+    form <- paste0("Y~", main, "+", inter) %>% 
+      as.formula()
+    res <- summary(form, data, family = binomial(link = "logit"))
+  } else if (model == "lm") {
+    y <- paste0(SNPs[1],"~")
+    if (length(SNPs) > 2){
+    inter <-  paste0(SNPs[-1], collapse = ":")
+    form <- paste0(y ,inter) %>% as.formula()
+    } else {
+    form <- paste0(y ,SNPs[2]) %>% as.formula()
+    }
+    res <- summary(lm(form, data))
+  }
+  return(res)
+}
+
+simVal <- function(dat, subset = NULL){
+  inters <- interSNP(dat)
+  if (is.null(subset)){
+    subset <- 1:nrow(dat)
+  }
+  dat <- dat[subset,]
+  models <- c("clogit", "lm")
+  result_cc <- map(inters, interForm, data = dat, model = "clogit")
+  result_co <- map(inters, interForm, data = dat, model = "lm")
+  return(list(cc= result_cc, co = result_co))
+}
+
+episfa <- function(x, nfolds, type = "data", control = NULL){
   # function to extract best gamma and rho
   best_gr <- function(stat, nzl, n = 270){
     stat <- stat[1:n]
@@ -117,7 +216,20 @@ episfa <- function(x, nfolds){
     print(paste0("round",i))
     train <- x[folds$subsets[folds$which != i], ]
     validation <- x[folds$subsets[folds$which == i], ]
-    result <- fanc(train, factors = round(0.1*ncol(x)))
+    if (type == "data"){
+      result <- fanc(train, factors = round(0.1*ncol(x)))
+    } else if(type == "covmat"){
+        if (!is.null(control)){
+          cov_mat <- cor(train) - cor(control) + diag(ncol(x))
+        } else {
+          cov_mat <- cor(train)
+        }
+      result <- fanc(factors = round(0.1*ncol(x)), covmat = cov_mat, n.obs = nrow(train))
+    } else if(type == "poly"){
+      result <- fanc(factors = round(0.1*ncol(x)), covmat = psych::polychoric(x)$rho, n.obs = nrow(train))
+    } else {
+      stop("type must be data or covmat or poly")
+    }
     # extract statistics
     loadings <- reduce(result$loadings, c)
     ui <- plyr::alply(result$uniquenesses,c(1,3),`[`)
@@ -154,8 +266,10 @@ episfa <- function(x, nfolds){
     nz_aic_lasso <- nonZeroLoad(loading_aic_lasso$loadings, coef = FALSE)
     nz_bic_lasso <- nonZeroLoad(loading_bic_lasso$loadings, coef = FALSE)
     # return results
-    return(list(nz_kl = nz_kl, 
-                nz_aic=nz_bic, 
+    return(list(kl  = kl,
+                nonzero = nonzero,
+                nz_kl = nz_kl, 
+                nz_aic=nz_aic, 
                 nz_caic = nz_caic,
                 nz_bic = nz_bic, 
                 nz_kl_lasso = nz_kl_lasso,
@@ -175,3 +289,27 @@ episfa <- function(x, nfolds){
   
   episfa_sim <- function(co = FALSE , sim_control){}
 
+svd_compress <- function(dat, depth = NULL){
+  n <- nrow(dat)
+  p <- ncol(dat)
+  dat <- scale(dat)
+  r <- svd(dat)
+  if (is.null(depth)){
+      var_p <- r$d**2/sum(r$d**2)*p
+      depth <- sum(var_p > 1)
+  }
+  dat_comp <- r$u[,1:depth] %*% diag(r$d[1:depth]) %*% t(r$v[,1:depth])
+  v_preserve <- diag(var(dat_comp))
+  variance <- 1 - v_preserve
+  dat_comp <- dat_comp + MASS::mvrnorm(n, rep(0,p), diag(variance))
+  colnames(dat_comp) <- colnames(dat) 
+  return(dat_comp)
+}
+
+cov_diff <- function(co, ctrl){
+  co <- cor(co)
+  ctrl <- cor(ctrl)
+  ctrl[ctrl ==1 | abs(ctrl) < 0.05] <- 0
+  co <- co - ctrl
+  return(co)
+}
