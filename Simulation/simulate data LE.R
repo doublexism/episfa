@@ -30,7 +30,8 @@ simPopLE <- function(N,
                      age_varb = 10,
                      age_varw = 5,
                      num_cov = 10,
-                     cov_sigma = NULL
+                     cov_sigma = NULL,
+                     population = TRUE
                      ) {
   
   # N: number of affected familes
@@ -134,7 +135,12 @@ simPopLE <- function(N,
     y <- (runif(nrow(X)) < P) %>% as.numeric()
     return(y)
   }
-  
+  # sampling
+  sampling <- function(dat, fids, N){
+    fids <- fids%>% sample(N)
+    sample <- subset(dat, fid %in% fids)
+    return(sample)
+  }
   # weibull cumulative risk function
   weibull_pf <- function(x) pweibull(x, shape_weibull, scale_weibull)
   
@@ -145,6 +151,9 @@ simPopLE <- function(N,
   }
   
   p_affected <- 1 - (1-p)**num_sib
+  if (population == TRUE){
+    FG_num = N / p_affected * 100 * 2 
+  }
   FG_num <- (qnbinom(p = 0.999999, size = N, prob = p_affected) + N)*2
   ## genotype frequencies
   MA_freq <- c((1-MAF)**2, 2*MAF*(1-MAF), MAF**2)
@@ -305,11 +314,15 @@ simPopLE <- function(N,
                     age_varb,
                     age_varw,
                     num_cov,
-                    cov_sigma
+                    cov_sigma,
+                    population
                     ))
   }
-  fids <- fids%>% sample(N)
-  df_sib <- subset(df_sib, fid %in% fids)
+  if (population == FALSE) {
+    df_sib <- sampling(df_sib, fids, N)
+  } else {
+    attr(df_sib, "cases") <- fids
+  }
   #add interaction snps to dataframe
   attr(df_sib,"interact") <- SNPs
   return(df_sib)

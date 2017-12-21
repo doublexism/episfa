@@ -108,7 +108,8 @@ simPopLE_l2_sp <- function(n, snp_num, maf, p, int_eff, int_lev,int_num, m_eff =
                      age_varb = 10,
                      age_varw = 5,
                      num_cov = 10,
-                     cov_sigma = NULL)
+                     cov_sigma = NULL,
+                     population = FALSE)
           return(func)
 }
 
@@ -139,7 +140,8 @@ simPopLE_l2_sp_wp <- function(n, snp_num, maf, p, int_eff, int_lev,int_num, m_ef
                    age_varb = 10,
                    age_varw = 5,
                    num_cov = 10,
-                   cov_sigma = NULL)
+                   cov_sigma = NULL,
+                   population = FALSE)
   return(func)
 }
 
@@ -217,7 +219,7 @@ episfa <- function(x, nfolds, type = "data", control = NULL){
     train <- x[folds$subsets[folds$which != i], ]
     validation <- x[folds$subsets[folds$which == i], ]
     if (type == "data"){
-      result <- fanc(train, factors = round(0.1*ncol(x)))
+      result <- fanc(train, factors = round(0.05*ncol(x)))
     } else if(type == "covmat"){
         if (!is.null(control)){
           cov_mat <- cor(train) - cor(control) + diag(ncol(x))
