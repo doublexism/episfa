@@ -7,11 +7,9 @@ library(foreach)
 kullback <- function(beta,ui, test){
   calculated <- beta%*%t(beta) + diag(ui)
   calculated <- as.matrix(calculated)
-  cov_f <- cor(test)
+  cov_f <- t(scale(test)) %*% scale(test)
   KL <- log(det(calculated)) + 
-    tr(solve(calculated)%*%cov_f)-
-    log(det(cov_f)) - 
-    ncol(test)
+    tr(solve(calculated)%*%cov_f)
   KL <- KL*0.5
   return(KL)
 }
@@ -183,7 +181,8 @@ simVal <- function(dat, subset = NULL){
   return(list(cc= result_cc, co = result_co))
 }
 
-episfa <- function(x, nfolds, type = "data", control = NULL){
+episfa <- function(x, nfolds,nfactor = NULL,sparsity = 0.05, type = "data", contrast = NULL, ...){
+ 
   # function to extract best gamma and rho
   best_gr <- function(stat, nzl, n = 270){
     stat <- stat[1:n]
@@ -211,7 +210,11 @@ episfa <- function(x, nfolds, type = "data", control = NULL){
   if(!is.matrix(x)){
     stop("x should be a matrix")
   }
-  
+  if (is.null(nfactor)){
+    nfactor <- sparsity*ncol(x)
+  } 
+  print(paste0("The size of matrix is ", dim(x)))
+  print(paste0("The number of factors is ", nfactor))
   folds <- cvFolds(nrow(x), K=nfolds)
   # cross validation
   r <- foreach(i=1:nfolds) %do% {
@@ -219,72 +222,102 @@ episfa <- function(x, nfolds, type = "data", control = NULL){
     train <- x[folds$subsets[folds$which != i], ]
     validation <- x[folds$subsets[folds$which == i], ]
     if (type == "data"){
-      result <- fanc(train, factors = round(0.05*ncol(x)))
+      result <- fanc(train, factors = nfactor, ...)
     } else if(type == "covmat"){
-        if (!is.null(control)){
-          cov_mat <- cor(train) - cor(control) + diag(ncol(x))
+        if (!is.null(contrast)){
+          cov_mat <- cor(train) - cor(contrast) + diag(ncol(train))
         } else {
           cov_mat <- cor(train)
         }
-      result <- fanc(factors = round(0.1*ncol(x)), covmat = cov_mat, n.obs = nrow(train))
+      result <- fanc(factors = nfactor, covmat = cov_mat, n.obs = nrow(train),...)
     } else if(type == "poly"){
-      result <- fanc(factors = round(0.1*ncol(x)), covmat = psych::polychoric(x)$rho, n.obs = nrow(train))
+      result <- fanc(factors = nfactor, covmat = psych::polychoric(train)$rho, n.obs = nrow(train),...)
     } else {
       stop("type must be data or covmat or poly")
     }
     # extract statistics
     loadings <- reduce(result$loadings, c)
     ui <- plyr::alply(result$uniquenesses,c(1,3),`[`)
+    print("begin to calc kl")
     kl <- map2_dbl(loadings, ui, kullback, test = validation)
+    print("finished")
     aic <- as.vector(result$AIC_dfnonzero)
     bic <- as.vector(result$BIC_dfnonzero)
     caic <- as.vector(result$CAIC_dfnonzero)
     nonzero <- as.vector(result$nonzero.loadings)
+    df <- as.vector(result$dfnonzero)
+    # extended and high-dimentional bic
+    ebic0.5 <- EBIC(bic, p = result$factors * ncol(train),df = df, gamma = 0.5)
+    ebic0.75 <- EBIC(bic, p = result$factors *ncol(train), df = df, gamma = 0.75)
+    ebic1 <- EBIC(bic, p = result$factors *ncol(train), df = df, gamma = 1)
+    hbic0.5 <- HBIC(bic, p = result$factors * ncol(train),df = df, gamma = 0.5)
+    hbic0.75 <- HBIC(bic, p = result$factors *ncol(train), df = df, gamma = 0.75)
+    hbic1 <- HBIC(bic, p = result$factors *ncol(train), df = df, gamma = 1)
     # extract interactions
     best_kl <- best_gr(kl, nonzero)
     best_aic <- best_gr(aic, nonzero)
     best_caic <- best_gr(caic, nonzero)
     best_bic <- best_gr(bic, nonzero)
-    best_kl_lasso <- best_gr(kl, nonzero, 30)
-    best_caic_lasso <- best_gr(caic, nonzero, 30)
-    best_aic_lasso <- best_gr(aic, nonzero, 30)
-    best_bic_lasso <- best_gr(bic, nonzero, 30)
+    best_ebic0.5 <- best_gr(ebic0.5, nonzero)
+    best_ebic0.75<- best_gr(ebic0.75, nonzero)
+    best_ebic1<- best_gr(ebic1, nonzero)
+    best_hbic0.5<- best_gr(hbic0.5, nonzero)
+    best_hbic0.75<- best_gr(hbic0.75, nonzero)
+    best_hbic1<- best_gr(hbic1, nonzero)
     # extract loadings
     loading_kl <- best_loading(result, best_kl)
     loading_aic <- best_loading(result, best_aic)
     loading_caic <- best_loading(result, best_caic)
     loading_bic <- best_loading(result, best_bic)
-    loading_kl_lasso <- best_loading(result, best_kl_lasso)
-    loading_caic_lasso <- best_loading(result, best_caic_lasso)
-    loading_aic_lasso <- best_loading(result, best_aic_lasso)
-    loading_bic_lasso <- best_loading(result, best_bic_lasso)
+    loading_ebic0.5 <- best_loading(result, best_ebic0.5)
+    loading_ebic0.75 <- best_loading(result, best_ebic0.75)
+    loading_ebic1 <- best_loading(result, best_ebic1)
+    loading_hbic0.5 <- best_loading(result, best_hbic0.5)
+    loading_hbic0.75 <- best_loading(result, best_hbic0.75)
+    loading_hbic1 <- best_loading(result, best_hbic1)
     # extract non zero loadings
     nz_kl <- nonZeroLoad(loading_kl$loadings, coef = FALSE)
     nz_aic <- nonZeroLoad(loading_aic$loadings, coef = FALSE)
     nz_caic <- nonZeroLoad(loading_caic$loadings, coef = FALSE)
     nz_bic <- nonZeroLoad(loading_bic$loadings, coef = FALSE)
-    nz_kl_lasso <- nonZeroLoad(loading_kl_lasso$loadings, coef = FALSE)
-    nz_caic_lasso <- nonZeroLoad(loading_kl_lasso$loadings, coef = FALSE)
-    nz_aic_lasso <- nonZeroLoad(loading_aic_lasso$loadings, coef = FALSE)
-    nz_bic_lasso <- nonZeroLoad(loading_bic_lasso$loadings, coef = FALSE)
+    nz_ebic0.5 <- nonZeroLoad(loading_ebic0.5$loadings, coef = FALSE)
+    nz_ebic0.75 <- nonZeroLoad(loading_ebic0.75$loadings, coef = FALSE)
+    nz_ebic1 <- nonZeroLoad(loading_ebic1$loadings, coef = FALSE)
+    nz_hbic0.5 <- nonZeroLoad(loading_hbic0.5$loadings, coef = FALSE)
+    nz_hbic0.75 <- nonZeroLoad(loading_hbic0.75$loadings, coef = FALSE)
+    nz_hbic1 <- nonZeroLoad(loading_hbic1$loadings, coef = FALSE)
     # return results
-    return(list(kl  = kl,
-                nonzero = nonzero,
+    return(list(kl  = matrix(kl, nrow  = 30),
+                bic = matrix(bic,nrow = 30),
+                ebic0.5 = matrix(ebic0.5,nrow =30),
+                ebic0.75 = matrix(ebic0.75, nrow = 30),
+                ebic1 = matrix(ebic1, nrow = 30),
+                hbic0.5 = matrix(hbic0.5, nrow = 30),
+                hbic0.75 = matrix(hbic0.75, nrow = 30),
+                hbic1 = matrix(hbic1, nrow = 30),
+                nonzero = matrix(nonzero,nrow = 30),
+                factors = result$factors,
+                time = result$time,
                 nz_kl = nz_kl, 
                 nz_aic=nz_aic, 
                 nz_caic = nz_caic,
                 nz_bic = nz_bic, 
-                nz_kl_lasso = nz_kl_lasso,
-                nz_caic_lasso = nz_caic_lasso,
-                nz_aic_lasso= nz_aic_lasso, 
-                nz_bic_lasso = nz_bic_lasso,
+                nz_ebic0.5 = nz_ebic0.5,
+                nz_ebic0.75 = nz_ebic0.75,
+                nz_ebic1 = nz_ebic1,
+                nz_hbic0.5 = nz_hbic0.5,
+                nz_hbic0.75 = nz_hbic0.75,
+                nz_hbic1 = nz_hbic1,
                 loading_kl = loading_kl,
                 loading_aic = loading_aic,
                 loading_caic = loading_caic,
                 loading_bic = loading_bic,
-                loading_kl_lasso = loading_kl_lasso,
-                loading_aic_lasso = loading_aic_lasso,
-                loading_bic_lasso = loading_bic_lasso))
+                loading_ebic0.5 = loading_ebic0.5,
+                loading_ebic0.75 = loading_ebic0.75,
+                loading_ebic1 = loading_ebic1,
+                loading_hbic0.5 = loading_hbic0.5,
+                loading_hbic0.75 = loading_hbic0.75,
+                loading_hbic1 = loading_hbic1))
   }
   return(r)
 }
@@ -314,4 +347,19 @@ cov_diff <- function(co, ctrl){
   ctrl[ctrl ==1 | abs(ctrl) < 0.05] <- 0
   co <- co - ctrl
   return(co)
+}
+
+EBIC <- function(BIC, p, df, gamma){
+  return(BIC + 2*gamma*log(p)*df)
+}
+
+HBIC <- function(BIC, p, df, gamma){
+  return(BIC - log(p)*df + 2*gamma*log(p)*df)
+}
+
+partial <- function(y, X){
+  X <- cbind(rep(1,nrow(X)),X)
+  hat <- X %*% solve((t(X)%*%X)) %*% t(X) %*% y 
+  res <- y - hat
+  return(as.vector(res))
 }
