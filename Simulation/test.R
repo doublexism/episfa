@@ -1,19 +1,27 @@
-test1 <- simPopLE_l2_sp(1000, 100, 0.2, 0.05, 2, 2, 1)
+test1 <- simPopLE_l2_sp(1000, 50, 0.2, 0.05, 2, 2, 2)
 test2 <- simPopLE_l2_sp(1000, 100, 0.2, 0.05, 2, 3, 1)
 test3 <- simPopLE_l2_sp(1000, 100, 0.2, 0.05, 2, 4, 1)
 test4 <- simPopLE_l2_sp(1000, 100, 0.2, 0.05, 2, 5, 1)
-df_co1 <- as.matrix(test1[Y == 1, 1:100])
+df_co1 <- as.matrix(test1[Y == 1, 1:50])
+
 df_co2 <- as.matrix(test2[Y == 1, 1:100])
+df_co2log <- log_trans(df_co2, offset = 2)
+
+
 df_co3<- as.matrix(test3[Y == 1, 1:100])
 df_co4 <- as.matrix(test4[Y == 1, 1:100])
-result1 <- episfa(df_co1, 10,type = "data")
 
-result2 <- episfa(df_co2, 10,type = "data")
+result1 <- episfa(df_co1, 5, nfactor= 3, type = "data")
+
+result2 <- episfa(df_co2, 10,nfactor= 3, type = "data")
+result2log <- episfa(df_co2log, 10,nfactor= 3, type = "data")
+
+
 result3 <- episfa(df_co3, 10,type = "data")
 result4 <- episfa(df_co4, 10,type = "data")
 
 
-result1.simple <- fanc(df_co1,factors=5)
+result1.simple <- fanc(df_co1,factors=3)
 #result1.prenet <- result3 <- fanc(df_co1,factors=2,  type = "prenet")
 result2.simple <- fanc(as.matrix(test[Y==1, 1:100]),factors=5, control = list(Delta = 0.01))
 
@@ -53,7 +61,7 @@ lm(SNP20 ~ SNP13 , data = test[Y==0]) %>% summary()
 
 lm(SNP20 ~ SNP13 * Y, data = test) %>% summary()
 
-map(result2,`[`, 6)
+map(result1,`[`, 21)
 
 kl_2_2 <- matrix(result1[[2]]$kl,nrow = 30)
 

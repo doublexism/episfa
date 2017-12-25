@@ -4,6 +4,10 @@ library(doParallel)
 library(tidyverse)
 library(svd)
 library(foreach)
+log_trans <- function(Mat, offset){
+  return(log(Mat + offset))
+}
+
 kullback <- function(beta,ui, test){
   calculated <- beta%*%t(beta) + diag(ui)
   calculated <- as.matrix(calculated)
@@ -73,11 +77,21 @@ tuneSfa <- function(train, val, nfactor){
   lists <- c(result$loadings)
 }
 
+isInter<- function(inter1, inter.list){
+  consist <- map_dbl(inter.list, ~all(inter1 %in% .)) %>% sum
+  return(consist)
+}
+
 cv.consistency <- function(episfa.obj, stat){
-  snps <- map(episfa.obj, `[[`,stat)
-  cvc <- map_
-  
-  
+  inters.list <- map(episfa.obj, `[`, stat) %>% 
+    unlist(recursive = FALSE) %>%
+    unlist(recursive = FALSE)
+  inters <- unique(inters.list) 
+  inter_name <- map_chr(inters, paste0, collapse = "")
+  consistency <- map_dbl(inters, isInter, inters.list) %>% 
+    setNames(inter_name) %>%
+    sort(decreasing = TRUE)
+  return(consistency)
 }
 
 simPopLE_l2_sp <- function(n, snp_num, maf, p, int_eff, int_lev,int_num, m_eff = NULL){
@@ -219,6 +233,7 @@ episfa <- function(x, nfolds,nfactor = NULL,sparsity = 0.05, type = "data", cont
   # cross validation
   r <- foreach(i=1:nfolds) %do% {
     print(paste0("round",i))
+    timestamp()
     train <- x[folds$subsets[folds$which != i], ]
     validation <- x[folds$subsets[folds$which == i], ]
     if (type == "data"){

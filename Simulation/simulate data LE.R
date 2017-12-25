@@ -201,9 +201,9 @@ simPopLE <- function(N,
   ## generate interaction effects
   if (sum(num_interact) != 0){
     # select interacting SNPs
-    SNPs <- map(rep(level, num_interact),~sample(SNP_names, size = .))
-    SNPs_margin <- unique(unlist(SNPs))
-    SNP_idx <- match(SNPs_margin, SNP_names)
+    SNP_idx <- sort(sample(1:num_SNP, size = sum(rep(level, num_interact))))
+    SNPs_margin <- paste0("SNP",SNP_idx)
+    SNPs <- split(SNPs_margin, rep(1:sum(num_interact), rep(level,each = num_interact)))
     # default effect size for the main effect 
     main <- log(main_effect)
     # generate marginal effects
@@ -245,7 +245,7 @@ simPopLE <- function(N,
             rep(log(interaction_effect), num_interact),
             cov_beta
             )
-
+  # print(colnames(X))
   if (!is.null(SNP_idx)){
     beta[SNP_idx + 1] <- main
   }
@@ -273,6 +273,7 @@ simPopLE <- function(N,
   }
   # update beta
   beta[1] <- (logit(p))*multiplier - offset
+  # print(beta)
   df_sib$Y <- logistic_func(X, beta)
   
   } else if (model == "cox"){
