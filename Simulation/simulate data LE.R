@@ -19,6 +19,7 @@ simPopLE <- function(N,
                      num_interact = 1,
                      model = "logistic",
                      genetic_model = "additive",
+                     inter_mode = "a",
                      p = 0.05,
                      scale_weibull = 80,
                      shape_weibull = 4,
@@ -81,21 +82,24 @@ simPopLE <- function(N,
                      a = c(1,0.5,0,0.5,0.25,0,0,0,0),
                      b = c(0,0.5,1,0.5,0.5,0.5,1,0.5,0),
                      c = c(0,0,0,0,0.25,0.5,0,0.5,1))
+  ## 
   ## generate sibling genotypes
   childGenoProb <- function(mother, father, gmat, num_sib){
     cat = 3*mother + father + 5
     break1 <- gmat$a[cat] %>% rep(each = num_sib)
     break2 <- (gmat$b[cat]+gmat$a[cat]) %>% rep(each = num_sib)
-    p <- runif(2*length(cat))
+    p <- runif(num_sib*length(cat))
     p[p<= break1] <- -1
     p[p > break1 & p<= break2] <- 0
     p[p > break2] <- 1
     return(p)
   }
-  
   ## generate interaction terms
   interTerm <- function(vars, dat){
-    inter <- dat[vars] %>% reduce(`*`) %>% as.data.frame()
+    vars <- map(vars, paste0, c("","d"))
+    inter_names <- reduce(vars, kronecker, paste0)
+    mats <- map(vars, `[`, dat)
+    inter <- prodCol(mats) %>% setnames(inter_names)
     return(inter)
   }
   
@@ -105,12 +109,24 @@ simPopLE <- function(N,
     return(levels)
   }
  
-  ## calculate offsets for marginal effects
-  offsetEffect <- function(snp_levels, level, effect, maf = MAF){
-    snp_effects <- effect[match(snp_levels, level)] %>% log()
-    offset <- map2_dbl(snp_levels, snp_effects, function(x,y) y*(2*maf -1)**(x-1)) %>% 
-      sum()
-    return(offset)
+  
+  beta_interact <- function(inter_mode, effect){
+    beta <- log(effect)
+    dic <- list("a" = c(1,0), "d" = c(1,1))
+    inter_mode <- strsplit(inter_mode,'')[[1]]
+    vec <- map(inter_mode, ~`[[`(dic,.))
+    vec <- reduce(vec, kronecker)
+    betas <- beta * vec /sum(vec)
+    return(betas)
+  }
+  ex_interact <- function(level, num_interact, maf){
+    level <- rep(level, num_interact)
+    ex_add <- 2*maf-1
+    ex_dom <- 2*maf*(1-maf)
+    prob <- list(c(ex_add,ex_dom))
+    prob <- map(level, ~rep(prob, .))
+    ex_inter <- map(prob, reduce, kronecker) %>% unlist()
+    return(ex_inter)
   }
   ## calculate variance for interaction effects
   var_interact <- function(n,maf){
@@ -141,6 +157,13 @@ simPopLE <- function(N,
     sample <- subset(dat, fid %in% fids)
     return(sample)
   }
+  # add dominant component
+  addDom <- function(mat, SNP_names){
+    mat <- cbind(mat, as.numeric(mat == 0))
+    SNP_names <- c(SNP_names, paste0(SNP_names,"d"))
+    colnames(mat) <- SNP_names
+    return(mat)
+  }
   # weibull cumulative risk function
   weibull_pf <- function(x) pweibull(x, shape_weibull, scale_weibull)
   
@@ -161,16 +184,15 @@ simPopLE <- function(N,
   ## parent genotype
   genotype_parents <- map(rep(FG_num, num_SNP), ~sample(x=c(-1,0,1),size = ., prob = MA_freq, replace=TRUE))
   SNP_names <- paste0("SNP", 1:num_SNP)
-  names(genotype_parents) <- SNP_names
-  genotype_parents <- as.data.frame(genotype_parents)
- 
+  genotype_parents <- addDom(genotype_parents, SNP_names) %>% as.data.frame()
   ## parent dataframe
   df_parent <- data.frame(id = 1:FG_num, sex = rep(0:1, each = FG_num/2)) %>% bind_cols(genotype_parents)
-  df_f <- df_parent %>% filter(sex == 1) %>% sample_n(FG_num/2) %>% mutate(fid = 1:(FG_num/2))
-  df_m <- df_parent %>% filter(sex == 0) %>% sample_n(FG_num/2) %>% mutate(fid = 1:(FG_num/2))
+  df_f <- df_parent %>% dplyr::filter(sex == 1) %>% sample_n(FG_num/2) %>% mutate(fid = 1:(FG_num/2))
+  df_m <- df_parent %>% dplyr::filter(sex == 0) %>% sample_n(FG_num/2) %>% mutate(fid = 1:(FG_num/2))
   
   ## generate sibling data
   df_sib <- map2_dfc(df_m[SNP_names], df_f[SNP_names], childGenoProb, gmat = geno_mat, num_sib = num_sib)
+  df_sib <- addDom(df_sib, SNP_names)
   df_sib$mid <- rep(df_m$id, each = num_sib)
   df_sib$faid <- rep(df_f$id, each = num_sib)
   df_sib$fid <- rep(df_m$fid, each = num_sib)
@@ -183,13 +205,6 @@ simPopLE <- function(N,
     df_sib <- df_sib %>% bind_rows(df_m, df_f)
   }
   
-  ## add genetic models
-  if (genetic_model == "recessive"){
-    df_sib[SNP_names] <-  map(df_sib[SNP_names], function(x)  as.numeric(x > 0))
-  } else if (genetic_model == "dorminent") {
-    df_sib[SNP_names] <-  map(df_sib[SNP_names], function(x)  as.numeric(x > -1))
-  }
-  
   ## generate age through truncated normal distribution
   m_age <- rtruncnorm(FG_num/2, mean = age_mean,sd = sqrt(age_varb), a = age_lower, b = age_higher)
   df_sib$age <- map(m_age, 
@@ -198,6 +213,7 @@ simPopLE <- function(N,
   df_sib$t_age <- df_sib$age - age_mean
   df_sib$intercept <-  1
   
+  offset_effect <- 0
   ## generate interaction effects
   if (sum(num_interact) != 0){
     # select interacting SNPs
@@ -205,16 +221,19 @@ simPopLE <- function(N,
     SNPs_margin <- paste0("SNP",SNP_idx)
     SNPs <- split(SNPs_margin, rep(1:sum(num_interact), rep(level,each = num_interact)))
     # default effect size for the main effect 
-    main <- log(main_effect)
+    # interaction effect
+    if (length(inter_mode)<sum(num_interact)){
+      stop("Please specify correct number of inter_mode parameter")
+    }
+    beta_inter <- map2(inter_mode, interaction_effect, beta_interact) %>% 
+      unlist()
     # generate marginal effects
     if(!is.null(margin_effect)){
-      snp_levels <- map(SNPs_margin, interLevel, snp_list = SNPs)
-      offset_effect <- map_dbl(snp_levels, offsetEffect, level = level,effect = interaction_effect)
-      main <- log(margin_effect) - offset_effect
+      ex_inter_offset <- ex_interact(level-1, num_interact, MAF)
+      offset_effect <- ex_inter_offset * beta_inter
     }
     # add interaction term to data
-    inter_names <- map_chr(SNPs, paste0, collapse = "")
-    inter_df <-  map_dfc(SNPs, interTerm, df_sib) %>% setNames(inter_names) 
+    inter_df <-  map_dfc(SNPs, interTerm, df_sib) 
     df_sib <- inter_df %>% bind_cols(df_sib,.)
   } else {
     inter_names <- NULL
@@ -238,22 +257,35 @@ simPopLE <- function(N,
   ## generate outcomes
   if (model == "logistic"){
   X <- as.matrix(df_sib[c("intercept", SNP_names, "sex", "t_age", inter_names, cov_names)])
-   beta <- c(logit(p), 
-            rep(0, num_SNP), 
+  num_int_term <- sum(2**num_interact)
+  beta <- c(logit(p), 
+            rep(0, 2*num_SNP),
             log(sex_effect), 
             log(age_effect), 
-            rep(log(interaction_effect), num_interact),
+            rep(0, num_int_term),
             cov_beta
             )
+  
   # print(colnames(X))
   if (!is.null(SNP_idx)){
-    beta[SNP_idx + 1] <- main
+    beta[SNP_idx + 1] <- log(margin_effect) - offset_effect
   }
   beta[SNP_main + 1] <- log(main_effect)
+  ## add genetic models
+  if (genetic_model == "recessive"){
+    beta[SNP_idx + 1] <- -0.5*(beta[SNP_idx + 1] - offset_effect)
+    beta[SNP_idx + 1+num_SNP] <- -log(main_effect)/2
+  } else if (genetic_model == "dorminent") {
+    beta[SNP_idx + 1] <- 0.5*(beta[SNP_idx + 1] - offset_effect)
+    beta[SNP_idx + 1+num_SNP] <- log(main_effect)/2
+  }
+  ## add interaction effects
+  beta[(4+2*num_SNP):(3+2*num_SNP+num_int_term)] <- beta_inter
+  
   # calculate variance of linear combination
   # var_int <- map_dbl(rep(level, num_interact), var_interact, maf=MAF)
   # print(var_int)
-  variance <- c(0, rep(0, num_SNP), 0, age_varb+age_varw ,rep(0, num_interact), diag(cov_sigma))
+  variance <- c(0, rep(0, 2*num_SNP), 0, age_varb+age_varw ,rep(0, num_int_term), diag(cov_sigma))
   #total variance and multiplier
   beta_sq <- beta**2
   total_variance <- sum(variance %*% beta_sq)
@@ -262,9 +294,13 @@ simPopLE <- function(N,
   
   #calculate offsets
   if(is.null(margin_effect)){
-    offset <- (num_main+length(SNPs_margin))*log(main_effect)*(2*MAF - 1) + 
-      log(sex_effect)*0.5 +
-      sum(num_interact*log(interaction_effect)*(2*MAF - 1)**level)
+    ex_x <- c(rep(2*MAF-1, num_SNP), 
+              rep(2*MAF*(1-MAF), num_SNP), 
+              0,
+              0.5,
+              ex_interact(level, num_interact, MAF),
+              rep(0, num_cov))
+    offset <- ex_x * beta[-1]
   } else {
     offset <- (num_main)*log(main_effect)*(2*MAF - 1) +  
       sum(main)*(2*MAF - 1) +
@@ -304,6 +340,7 @@ simPopLE <- function(N,
                     num_interact,
                     model,
                     genetic_model,
+                    inter_mode,
                     p,
                     scale_weibull,
                     shape_weibull,

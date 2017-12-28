@@ -82,18 +82,6 @@ isInter<- function(inter1, inter.list){
   return(consist)
 }
 
-cv.consistency <- function(episfa.obj, stat){
-  inters.list <- map(episfa.obj, `[`, stat) %>% 
-    unlist(recursive = FALSE) %>%
-    unlist(recursive = FALSE)
-  inters <- unique(inters.list) 
-  inter_name <- map_chr(inters, paste0, collapse = "")
-  consistency <- map_dbl(inters, isInter, inters.list) %>% 
-    setNames(inter_name) %>%
-    sort(decreasing = TRUE)
-  return(consistency)
-}
-
 simPopLE_l2_sp <- function(n, snp_num, maf, p, int_eff, int_lev,int_num, m_eff = NULL){
           func <- simPopLE(n,
                      num_SNP = snp_num,
@@ -186,7 +174,7 @@ interForm <- function(SNPs, data, model = "clogit"){
 simVal <- function(dat, subset = NULL){
   inters <- interSNP(dat)
   if (is.null(subset)){
-    subset <- 1:nrow(dat)
+  subset <- 1:nrow(dat)
   }
   dat <- dat[subset,]
   models <- c("clogit", "lm")
@@ -195,7 +183,7 @@ simVal <- function(dat, subset = NULL){
   return(list(cc= result_cc, co = result_co))
 }
 
-episfa <- function(x, nfolds,nfactor = NULL,sparsity = 0.05, type = "data", contrast = NULL, ...){
+cv.episfa <- function(x, nfolds,nfactor = NULL,sparsity = 0.05, type = "data", contrast = NULL, ...){
  
   # function to extract best gamma and rho
   best_gr <- function(stat, nzl, n = 270){
@@ -232,7 +220,7 @@ episfa <- function(x, nfolds,nfactor = NULL,sparsity = 0.05, type = "data", cont
   folds <- cvFolds(nrow(x), K=nfolds)
   # cross validation
   r <- foreach(i=1:nfolds) %do% {
-    print(paste0("round",i))
+    print(paste0("cross validate round",i))
     timestamp()
     train <- x[folds$subsets[folds$which != i], ]
     validation <- x[folds$subsets[folds$which == i], ]
@@ -336,8 +324,74 @@ episfa <- function(x, nfolds,nfactor = NULL,sparsity = 0.05, type = "data", cont
   }
   return(r)
 }
-  
-  episfa_sim <- function(co = FALSE , sim_control){}
+
+cv.consistency <- function(episfa.obj, stat){
+  inters.list <- map(episfa.obj, `[`, stat) %>% 
+    unlist(recursive = FALSE) %>%
+    unlist(recursive = FALSE)
+  inters <- unique(inters.list) 
+  inter_name <- map_chr(inters, paste0, collapse = "")
+  consistency <- map_dbl(inters, isInter, inters.list) %>% 
+    setNames(inter_name) %>%
+    sort(decreasing = TRUE)
+  return(consistency)
+}
+
+effRemove <- function(consistency, data){
+  best <- names(consistency[1])
+  snps <- str_extract_all(best,"SNP[0-9]*") %>% unlist() 
+  cols <- setdiff(colnames(data), snps)
+  dat <- data[,cols]
+  return(dat)
+}
+
+episfa <- function(dat, nfolds, recursion = 5, criteria = "ebic"){
+  if (criteria  %in% c("ebic","hbic")){
+    criteria <- paste0("nz",criteria,c(1, 0.75, 0.5))
+  } else {
+    criteria <-  paste0("nz",criteria)
+  }
+  inters <- list()
+  ## recursion
+  for(i in 1:recursion) {
+    print(paste0("finding epistatic effect: number ",i,", ..."))
+    # result <- cv.episfa(dat, nfolds, nfactor = 1, type = "data")
+    # consistency <- map(1:length(criteria),~cv.consistency(result, criteria[.]))
+    consistency <- consist
+    elements <- lengths(consistency)
+    if (sum(elements) >= 1){
+      effect <- consistency[elements >= 1][[1]][1]
+      name <- names(effect)
+      print(paste0("Found interaction ",names(effect)))
+      dat <- effRemove(consistency, dat)
+      inters[name] <- effect
+    } else {
+      sprintf("non interaction found for criteria %s, algorithm halt", criteria)
+      inters[i] <- NA
+      break()
+    }
+  }
+  return(inters)
+}
+    
+episfa_sim <- function(n_rep = 100, recursion = 2, sim_func = simPopLE_l2_sp, sim_control = list()){
+    cores <- detectCores(logical = FALSE)
+    ## make cluster
+    cl <- makeCluster(ncores, rscript_args = c("--no-init-file", "--no-site-file", "--no-environ"))
+    registerDoParallel(cl)
+    ## looping
+    times(n_rep) %dopar% {
+      # simulate data
+      simdata <- do.call(sim_func,sim_control)
+      snp_name <- colnames(simdata) %>% str_subset('SNP[0-9]$')
+      df_co <- simdata[Y == 1,snp_name, with = FALSE]
+      # episfa run
+      result_episfa <- episfa(dat, nfolds, recursion = 5, criteria = "ebic")
+      
+    }
+    
+    
+  }
 
 svd_compress <- function(dat, depth = NULL){
   n <- nrow(dat)
@@ -377,4 +431,27 @@ partial <- function(y, X){
   hat <- X %*% solve((t(X)%*%X)) %*% t(X) %*% y 
   res <- y - hat
   return(as.vector(res))
+}
+
+
+prodCol2 <- function(x,y = NULL, func = `*`){
+  if (is.null(y)){
+    y <- x
+  }
+  if (nrow(x) != nrow(y)){
+    stop("x and y in 'prodCol' function ust have same number of rows")
+  }
+  p <- nrow(x)
+  index <- ((1:p) - 1)*p+1:p
+  dimentions <- ncol(x)*ncol(y)
+  product <- kronecker(x,y) %>% `[`(index,1:dimentions)
+  return(product)
+}
+
+prodCol <- function(l, func = `*`){
+  if (is.matrix(l)){
+    return(prodCol2(l))
+  }
+  product <- reduce(l,prodCol2, func)
+  return(product)
 }
