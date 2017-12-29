@@ -19,7 +19,7 @@ simPopLE <- function(N,
                      num_interact = 1,
                      model = "logistic",
                      genetic_model = "additive",
-                     inter_mode = "a",
+                     inter_mode = NULL,
                      p = 0.05,
                      scale_weibull = 80,
                      shape_weibull = 4,
@@ -70,8 +70,11 @@ simPopLE <- function(N,
   if(length(num_interact) > length(level)){
     stop("Incorrect number of interaction effects were specified")
   }
-  if(is.null(cov_sigma)){
+  if (is.null(cov_sigma)){
     cov_sigma <- diag(rep(1, num_cov))
+  }
+  if (is.null(inter_mode)){
+    inter_mode <- map_chr(rep(level, num_interact),~str_dup("a",.))
   }
   ## covariate effects
   cov_beta <- c(log(cov_effect), -log(cov_effect)) %>% rep(each=num_cov/2)
@@ -98,8 +101,11 @@ simPopLE <- function(N,
   interTerm <- function(vars, dat){
     vars <- map(vars, paste0, c("","d"))
     inter_names <- reduce(vars, kronecker, paste0)
-    mats <- map(vars, `[`, dat)
-    inter <- prodCol(mats) %>% setnames(inter_names)
+   # print(inter_names)
+    mats <- map(vars, ~`[`(dat, .))
+    inter <- prodCol(mats) %>% 
+      as.data.frame() %>%
+      setNames(inter_names) 
     return(inter)
   }
   
@@ -127,6 +133,24 @@ simPopLE <- function(N,
     prob <- map(level, ~rep(prob, .))
     ex_inter <- map(prob, reduce, kronecker) %>% unlist()
     return(ex_inter)
+  }
+  SNP_inter_idx <- function(level, num_interact){
+    level2idx <- function(idx, num){
+      chuck <- 2**(num-idx)
+      chuck_num <- 2**(idx-1)
+      idx <- rep(c(1,0), each = chuck, times = chuck_num)
+      number <- 1:2**num  * idx 
+      number <- number[number >0]
+      return(number)
+    }
+    
+    level <-  rep(level, num_interact)
+    level_idx <- map(level, ~seq(1,.)) %>%
+      unlist()
+    level_num <- rep(level,level)
+    index <- map2(level_idx, level_num, level2idx) %>%
+      unlist()
+    return(index)
   }
   ## calculate variance for interaction effects
   var_interact <- function(n,maf){
@@ -159,7 +183,11 @@ simPopLE <- function(N,
   }
   # add dominant component
   addDom <- function(mat, SNP_names){
-    mat <- cbind(mat, as.numeric(mat == 0))
+    if (is.data.frame(mat)){
+      mat <- as.matrix(mat)
+    }
+    mat <- cbind(mat, ifelse(mat == 0, 1, 0))
+    # print(head(mat))
     SNP_names <- c(SNP_names, paste0(SNP_names,"d"))
     colnames(mat) <- SNP_names
     return(mat)
@@ -182,8 +210,10 @@ simPopLE <- function(N,
   MA_freq <- c((1-MAF)**2, 2*MAF*(1-MAF), MAF**2)
 
   ## parent genotype
-  genotype_parents <- map(rep(FG_num, num_SNP), ~sample(x=c(-1,0,1),size = ., prob = MA_freq, replace=TRUE))
+  genotype_parents <- sample(x=c(-1,0,1),size = num_SNP*FG_num, prob = MA_freq, replace=TRUE) %>% 
+    matrix(ncol = num_SNP)
   SNP_names <- paste0("SNP", 1:num_SNP)
+  SNP_names_d <- paste0(SNP_names, "d")
   genotype_parents <- addDom(genotype_parents, SNP_names) %>% as.data.frame()
   ## parent dataframe
   df_parent <- data.frame(id = 1:FG_num, sex = rep(0:1, each = FG_num/2)) %>% bind_cols(genotype_parents)
@@ -192,7 +222,7 @@ simPopLE <- function(N,
   
   ## generate sibling data
   df_sib <- map2_dfc(df_m[SNP_names], df_f[SNP_names], childGenoProb, gmat = geno_mat, num_sib = num_sib)
-  df_sib <- addDom(df_sib, SNP_names)
+  df_sib <- addDom(df_sib, SNP_names) %>% as.data.frame()
   df_sib$mid <- rep(df_m$id, each = num_sib)
   df_sib$faid <- rep(df_f$id, each = num_sib)
   df_sib$fid <- rep(df_m$fid, each = num_sib)
@@ -229,12 +259,20 @@ simPopLE <- function(N,
       unlist()
     # generate marginal effects
     if(!is.null(margin_effect)){
-      ex_inter_offset <- ex_interact(level-1, num_interact, MAF)
-      offset_effect <- ex_inter_offset * beta_inter
+      ex_inter_offset <- ex_interact(level - 1, num_interact, MAF)
+      beta_inter_offset_idx <- SNP_inter_idx(level, num_interact)
+      beta_inter_offset <- beta_inter[beta_inter_offset_idx] %>%
+        matrix(ncol = length(SNP_idx))
+      print(ex_inter_offset)
+      print(beta_inter_offset)
+      offset_effect <- ex_inter_offset %*% beta_inter_offset %>% as.numeric()
+    } else {
+      margin_effect <- main_effect
     }
     # add interaction term to data
     inter_df <-  map_dfc(SNPs, interTerm, df_sib) 
     df_sib <- inter_df %>% bind_cols(df_sib,.)
+    inter_names <- colnames(df_sib) %>% str_subset('SNP[0-9]+[d]*SNP')
   } else {
     inter_names <- NULL
     SNP_idx <- NULL
@@ -256,8 +294,8 @@ simPopLE <- function(N,
   
   ## generate outcomes
   if (model == "logistic"){
-  X <- as.matrix(df_sib[c("intercept", SNP_names, "sex", "t_age", inter_names, cov_names)])
-  num_int_term <- sum(2**num_interact)
+  X <- as.matrix(df_sib[c("intercept", SNP_names,SNP_names_d, "sex", "t_age", inter_names, cov_names)])
+  num_int_term <- sum(2**rep(level,num_interact))
   beta <- c(logit(p), 
             rep(0, 2*num_SNP),
             log(sex_effect), 
@@ -285,31 +323,27 @@ simPopLE <- function(N,
   # calculate variance of linear combination
   # var_int <- map_dbl(rep(level, num_interact), var_interact, maf=MAF)
   # print(var_int)
-  variance <- c(0, rep(0, 2*num_SNP), 0, age_varb+age_varw ,rep(0, num_int_term), diag(cov_sigma))
+  variance <- c(0, rep(0.31, 2*num_SNP), 0.25, age_varb+age_varw ,rep(0, num_int_term), diag(cov_sigma))
+ 
   #total variance and multiplier
   beta_sq <- beta**2
   total_variance <- sum(variance %*% beta_sq)
+  print(total_variance)
   lambda_sq <- pi/8
   multiplier <- sqrt(1+lambda_sq*total_variance)
   
   #calculate offsets
-  if(is.null(margin_effect)){
-    ex_x <- c(rep(2*MAF-1, num_SNP), 
+  ex_x <- c(rep(2*MAF-1, num_SNP), 
               rep(2*MAF*(1-MAF), num_SNP), 
               0,
               0.5,
               ex_interact(level, num_interact, MAF),
               rep(0, num_cov))
-    offset <- ex_x * beta[-1]
-  } else {
-    offset <- (num_main)*log(main_effect)*(2*MAF - 1) +  
-      sum(main)*(2*MAF - 1) +
-      log(sex_effect)*0.5 +
-      sum(num_interact*log(interaction_effect)*(2*MAF - 1)**level)
-  }
+  offset <- ex_x %*% beta[-1]
   # update beta
   beta[1] <- (logit(p))*multiplier - offset
-  # print(beta)
+  # print(ex_x)
+  print(beta)
   df_sib$Y <- logistic_func(X, beta)
   
   } else if (model == "cox"){

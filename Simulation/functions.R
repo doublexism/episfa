@@ -4,6 +4,7 @@ library(doParallel)
 library(tidyverse)
 library(svd)
 library(foreach)
+library(fanc)
 log_trans <- function(Mat, offset){
   return(log(Mat + offset))
 }
@@ -82,13 +83,14 @@ isInter<- function(inter1, inter.list){
   return(consist)
 }
 
-simPopLE_l2_sp <- function(n, snp_num, maf, p, int_eff, int_lev,int_num, m_eff = NULL){
+simPopLE_l2_sp <- function(n, snp_num, maf, p, int_eff, int_lev,int_num, m_eff = NULL, mode = NULL){
           func <- simPopLE(n,
                      num_SNP = snp_num,
                      MAF = maf,  
                      main_effect = 1.5, 
                      interaction_effect =int_eff, 
                      margin_effect = m_eff,
+                     inter_mode = mode,
                      cov_effect = 1.2, 
                      level = int_lev,
                      num_parents = 0, 
@@ -114,17 +116,18 @@ simPopLE_l2_sp <- function(n, snp_num, maf, p, int_eff, int_lev,int_num, m_eff =
 }
 
 
-simPopLE_l2_sp_wp <- function(n, snp_num, maf, p, int_eff, int_lev,int_num, m_eff = NULL){
+simPopLE_l2_sp_wp <- function(n, snp_num, maf, p, int_eff, int_lev,int_num, m_eff = NULL, mode = NULL){
   func <- simPopLE(n,
                    num_SNP = snp_num,
                    MAF = maf,  
                    main_effect = 1.5, 
                    interaction_effect =int_eff, 
                    margin_effect = m_eff,
+                   inter_mode = mode,
                    cov_effect = 1.2, 
                    level = int_lev,
                    num_parents = 2, 
-                   num_sib = 2, 
+                   num_sib = 1, 
                    num_main = 0,
                    num_interact = int_num,
                    model = "logistic",
@@ -179,7 +182,7 @@ simVal <- function(dat, subset = NULL){
   dat <- dat[subset,]
   models <- c("clogit", "lm")
   result_cc <- map(inters, interForm, data = dat, model = "clogit")
-  result_co <- map(inters, interForm, data = dat, model = "lm")
+  result_co <- map(inters, interForm, data = dat[dat$Y == 1,], model = "lm")
   return(list(cc= result_cc, co = result_co))
 }
 
@@ -441,10 +444,13 @@ prodCol2 <- function(x,y = NULL, func = `*`){
   if (nrow(x) != nrow(y)){
     stop("x and y in 'prodCol' function ust have same number of rows")
   }
-  p <- nrow(x)
-  index <- ((1:p) - 1)*p+1:p
-  dimentions <- ncol(x)*ncol(y)
-  product <- kronecker(x,y) %>% `[`(index,1:dimentions)
+  if (is.data.frame(x) | is.data.frame(y)){
+    x <- as.matrix(x)
+    y <- as.matrix(y)
+  }
+  product <- plyr::alply(x, 2,function(col) col*y)
+  product <- product%>% do.call(cbind,.)
+  colnames(product) <- NULL
   return(product)
 }
 
@@ -455,3 +461,35 @@ prodCol <- function(l, func = `*`){
   product <- reduce(l,prodCol2, func)
   return(product)
 }
+
+genoType <- function(vec){
+  num <- length(vec)
+  mgeno <- vec[seq(1,num,2)]
+  pgeno <- vec[seq(2,num,2)]
+  pargeno <- 3*mgeno+pgeno
+  return(pargeno)
+}
+
+stanSurf <- function(sib, pat, type = "pat"){
+  mean <- setDT(data.frame("sib" = sib, "pat" = pat))[,.(m = mean(sib)), pat]
+  m <- mean$m
+  pat_type <-mean$pat
+  mean <- m[match(pat, pat_type)]
+  return(mean)
+}
+
+corrS <- function(sib_geno, parent_geno){
+  parental_type <- map(parent_geno, genoType) 
+  sib_sub <- map2_dfc(sib_geno, parental_type, stanSurf)
+  sib_geno <- sib_geno - sib_sub
+  sib_geno <- as.matrix(sib_geno)
+  X <- t(sib_geno) %*% sib_geno /nrow(sib_geno)
+  return(X)
+}
+
+# sib_geno <- test1200[!is.na(mid),] %>% arrange(fid)
+# sib_geno <- sib_geno[,1:200]
+# pat_geno <- test1200[is.na(mid),] %>% arrange(fid)
+# pat_geno <- pat_geno[,1:200]
+
+# corrs <- corrS(sib_geno , pat_geno)
