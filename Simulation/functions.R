@@ -352,9 +352,9 @@ effRemove <- function(consistency, data){
 
 episfa <- function(dat, nfolds, recursion = 5, criteria = "ebic",...){
   if (criteria  %in% c("ebic","hbic")){
-    criteria <- paste0("nz",criteria,c(1, 0.75, 0.5))
+    criteria <- paste0("nz_",criteria,c(1, 0.75, 0.5))
   } else {
-    criteria <-  paste0("nz",criteria)
+    criteria <-  paste0("nz_",criteria)
   }
   inters <- list()
   ## recursion
