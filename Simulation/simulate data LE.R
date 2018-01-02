@@ -32,7 +32,8 @@ simPopLE <- function(N,
                      age_varw = 5,
                      num_cov = 10,
                      cov_sigma = NULL,
-                     population = TRUE
+                     population = TRUE,
+                     Sequencial = TRUE
                      ) {
   
   # N: number of affected familes
@@ -247,7 +248,11 @@ simPopLE <- function(N,
   ## generate interaction effects
   if (sum(num_interact) != 0){
     # select interacting SNPs
-    SNP_idx <- sort(sample(1:num_SNP, size = sum(rep(level, num_interact))))
+    if (Sequencial){
+      SNP_idx <- 1:sum(rep(level, num_interact))
+    } else{
+      SNP_idx <- sort(sample(1:num_SNP, size = sum(rep(level, num_interact))))
+    }
     SNPs_margin <- paste0("SNP",SNP_idx)
     SNPs <- split(SNPs_margin, rep(1:sum(num_interact), rep(level,each = num_interact)))
     # default effect size for the main effect 
@@ -323,7 +328,7 @@ simPopLE <- function(N,
   # calculate variance of linear combination
   # var_int <- map_dbl(rep(level, num_interact), var_interact, maf=MAF)
   # print(var_int)
-  variance <- c(0, rep(0.31, 2*num_SNP), 0.25, age_varb+age_varw ,rep(0, num_int_term), diag(cov_sigma))
+  variance <- c(0, rep(0, 2*num_SNP), 0.25, age_varb+age_varw ,rep(0, num_int_term), diag(cov_sigma))
  
   #total variance and multiplier
   beta_sq <- beta**2
@@ -387,7 +392,8 @@ simPopLE <- function(N,
                     age_varw,
                     num_cov,
                     cov_sigma,
-                    population
+                    population,
+                    Sequencial
                     ))
   }
   if (population == FALSE) {

@@ -5,6 +5,8 @@ library(tidyverse)
 library(svd)
 library(foreach)
 library(fanc)
+tr <- psych::tr
+
 log_trans <- function(Mat, offset){
   return(log(Mat + offset))
 }
@@ -91,7 +93,7 @@ simPopLE_l2_sp <- function(n, snp_num, maf, p, int_eff, int_lev,int_num, m_eff =
                      interaction_effect =int_eff, 
                      margin_effect = m_eff,
                      inter_mode = mode,
-                     cov_effect = 1.2, 
+                     cov_effect = 1, 
                      level = int_lev,
                      num_parents = 0, 
                      num_sib = 2, 
@@ -104,8 +106,8 @@ simPopLE_l2_sp <- function(n, snp_num, maf, p, int_eff, int_lev,int_num, m_eff =
                      shape_weibull = 4,
                      age_lower = 20,
                      age_higher = 80,
-                     sex_effect = 1.2,
-                     age_effect = 1.005,
+                     sex_effect = 1,
+                     age_effect = 1,
                      age_mean = 50,
                      age_varb = 10,
                      age_varw = 5,
@@ -348,7 +350,7 @@ effRemove <- function(consistency, data){
   return(dat)
 }
 
-episfa <- function(dat, nfolds, recursion = 5, criteria = "ebic"){
+episfa <- function(dat, nfolds, recursion = 5, criteria = "ebic",...){
   if (criteria  %in% c("ebic","hbic")){
     criteria <- paste0("nz",criteria,c(1, 0.75, 0.5))
   } else {
@@ -358,18 +360,18 @@ episfa <- function(dat, nfolds, recursion = 5, criteria = "ebic"){
   ## recursion
   for(i in 1:recursion) {
     print(paste0("finding epistatic effect: number ",i,", ..."))
-    # result <- cv.episfa(dat, nfolds, nfactor = 1, type = "data")
-    # consistency <- map(1:length(criteria),~cv.consistency(result, criteria[.]))
-    consistency <- consist
+    result <- cv.episfa(dat, nfolds, nfactor = 1, type = "data",...)
+    consistency <- map(1:length(criteria),~cv.consistency(result, criteria[.]))
+    # consistency <- consist
     elements <- lengths(consistency)
-    if (sum(elements) >= 1){
+    if (sum(elements) >= 1) {
       effect <- consistency[elements >= 1][[1]][1]
       name <- names(effect)
       print(paste0("Found interaction ",names(effect)))
       dat <- effRemove(consistency, dat)
       inters[name] <- effect
     } else {
-      sprintf("non interaction found for criteria %s, algorithm halt", criteria)
+      sprintf("no interaction found for criteria %s, algorithm halts", criteria)
       inters[i] <- NA
       break()
     }
@@ -377,24 +379,110 @@ episfa <- function(dat, nfolds, recursion = 5, criteria = "ebic"){
   return(inters)
 }
     
-episfa_sim <- function(n_rep = 100, recursion = 2, sim_func = simPopLE_l2_sp, sim_control = list()){
-    cores <- detectCores(logical = FALSE)
+episfa_sim <- function(n_rep = 100, recursion = 2, cvfolds = 10, sim_func = simPopLE_l2_sp, sim_control = list(), criteria = "ebic",...){
+    ncores <- detectCores()
+    sprintf("running on %i cores",ncores)
     ## make cluster
     cl <- makeCluster(ncores, rscript_args = c("--no-init-file", "--no-site-file", "--no-environ"))
     registerDoParallel(cl)
+    ## hyperparameters
+    num_interact <- sim_control[["int_num"]]
+    print(num_interact)
     ## looping
-    times(n_rep) %dopar% {
+    benchmark <- foreach(i = 1:n_rep, 
+                         .export = ls(.GlobalEnv), 
+                         .packages = c("purrr","stringr","fanc","dplyr","sigmoid","truncnorm","data.table","cvTools", "foreach"),
+                         .verbose = TRUE) %dopar% {
+      #timing
+      time_start <- Sys.time()
       # simulate data
       simdata <- do.call(sim_func,sim_control)
+      inters <- interSNP(simdata) %>% map(paste0)
       snp_name <- colnames(simdata) %>% str_subset('SNP[0-9]$')
-      df_co <- simdata[Y == 1,snp_name, with = FALSE]
+      df_co <- simdata[Y == 1,snp_name, with = FALSE] %>% as.matrix()
       # episfa run
-      result_episfa <- episfa(dat, nfolds, recursion = 5, criteria = "ebic")
+      result_episfa <- episfa(df_co, cvfolds, recursion = recursion, criteria = "ebic",...)
+      # inters <- c("SNP1SNP2","SNP3SNP4","SNP5SNP6")
+      # result_episfa <- list(SNP1SNP2 = 3, SNP3SNP4 = 2, SNP5SNP7 = 1)
+      ## false_positive 1: any unknown interaction effect is false dicovery
+      false_positive <- 0
+      false_positive_any <- 0
+      false_positive_all <- 0
+      ## true_positive 2: the proportion of false discovered effects among all discovered effects
+      true_positive <- 0
+      true_positive_any <- 0
+      true_positive_all <- 0
       
+      inter_names <-names(result_episfa) 
+      if (!is.na(result_episfa[[1]])){
+        false_positive <- map_dbl(inter_names, interDiscover,inters) %>%
+          sum()
+        false_positive_any <- ifelse(false_positive > 0, 1, 0)
+        false_positive_all <- ifelse(false_positive == length(result_episfa), 1, 0)
+        true_positive <- length(result_episfa) - false_positive
+        # any interaction were discovered
+        true_positive_any <- ifelse(true_positive > 0 , 1, 0)
+        # all discovered interaction are positive 
+        true_positive_all <- ifelse(true_positive == num_interact, 1, 0)
+      }
+      time_end <- Sys.time()
+      time_diff <- round(as.numeric(time_end - time_start),1)
+      return(list(fp = false_positive,
+             fpany = false_positive_any,
+             fpall = false_positive_all,
+             tp = true_positive,
+             tpany = true_positive_any,
+             tpall = true_positive_all,
+             result = result_episfa,
+             time = time_diff))
     }
-    
-    
+    fp <- getListElement(benchmark,"fp") %>% sum()
+    fpany <- getListElement(benchmark,"fpany") %>% sum()
+    fpall <- getListElement(benchmark,"fpall") %>% sum()
+    tp <- getListElement(benchmark,"tp") %>% sum()
+    tpany <- getListElement(benchmark,"tpany") %>% sum()
+    tpall <- getListElement(benchmark,"tpall") %>% sum()
+    # alpha, power and ba
+    alpha1 <- fpany/n_rep
+    alpha2 <- fpall/n_rep
+    alpha3 <- fp/(n_rep * recursion)
+    power1 <- tpany/n_rep
+    power2 <- tpall/n_rep
+    power3 <- tp/(n_rep * num_interact)
+    ba1 <- (1-alpha1 + power1)/2
+    ba2 <- (1-alpha2 + power2)/2
+    ba3 <- (1-alpha3 + power3)/2
+    stopCluster(cl)
+    return(list(
+      alpha1 = alpha1,
+      alpha2 = alpha2,
+      alpha3 = alpha3,
+      power1 = power1,
+      power2 = power2,
+      power3 = power3,
+      ba1 = ba1,
+      ba2 = ba2,
+      ba3 = ba3,
+      benchmark = benchmark))
+}
+
+interDiscover <- function(candidate, inters){
+  if (!is.null(inters)){
+    in_inters <- map_dbl(inters, ~all(. %in% candidate)) %>%
+      sum() 
+    return(ifelse(in_inters == 0, 1 ,0))
+  } else {
+    return(1)
   }
+}
+
+getListElement <- function(.l, name, simplify = TRUE){
+  element <- map(.l,`[[`,name)
+  if (simplify){
+    element <- unlist(element)
+  }
+  return(element)
+}
 
 svd_compress <- function(dat, depth = NULL){
   n <- nrow(dat)
@@ -485,6 +573,13 @@ corrS <- function(sib_geno, parent_geno){
   sib_geno <- as.matrix(sib_geno)
   X <- t(sib_geno) %*% sib_geno /nrow(sib_geno)
   return(X)
+}
+
+permuteMatrix <- function(mat, margin = 2){
+  num_dim <- dim(mat)[margin]
+  nums <- sample.int(num_dim,num_dim,replace = FALSE)
+  mat <- mat[,nums]
+  return(mat)
 }
 
 # sib_geno <- test1200[!is.na(mid),] %>% arrange(fid)
