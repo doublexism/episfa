@@ -80,11 +80,6 @@ tuneSfa <- function(train, val, nfactor){
   lists <- c(result$loadings)
 }
 
-isInter<- function(inter1, inter.list){
-  consist <- map_dbl(inter.list, ~all(inter1 %in% .)) %>% sum
-  return(consist)
-}
-
 simPopLE_l2_sp <- function(n, snp_num, maf, p, int_eff, int_lev,int_num, m_eff = NULL, mode = NULL){
           func <- simPopLE(n,
                      num_SNP = snp_num,
@@ -330,6 +325,11 @@ cv.episfa <- function(x, nfolds,nfactor = NULL,sparsity = 0.05, type = "data", c
   return(r)
 }
 
+isInter<- function(inter1, inter.list){
+  consist <- map_dbl(inter.list, ~all(inter1 %in% .)) %>% sum
+  return(consist)
+}
+
 cv.consistency <- function(episfa.obj, stat){
   inters.list <- map(episfa.obj, `[`, stat) %>% 
     unlist(recursive = FALSE) %>%
@@ -343,7 +343,7 @@ cv.consistency <- function(episfa.obj, stat){
 }
 
 effRemove <- function(consistency, data){
-  best <- names(consistency[1])
+  best <- names(consistency[[1]][1])
   snps <- str_extract_all(best,"SNP[0-9]*") %>% unlist() 
   cols <- setdiff(colnames(data), snps)
   dat <- data[,cols]
@@ -359,15 +359,16 @@ episfa <- function(dat, nfolds, recursion = 5, criteria = "ebic",...){
   inters <- list()
   ## recursion
   for(i in 1:recursion) {
-    print(paste0("finding epistatic effect: number ",i,", ..."))
+    print(paste0("Searching for epistatic effects: number ",i,", ..."))
     result <- cv.episfa(dat, nfolds, nfactor = 1, type = "data",...)
     consistency <- map(1:length(criteria),~cv.consistency(result, criteria[.]))
+    print(consistency)
     # consistency <- consist
     elements <- lengths(consistency)
     if (sum(elements) >= 1) {
       effect <- consistency[elements >= 1][[1]][1]
       name <- names(effect)
-      print(paste0("Found interaction ",names(effect)))
+      print(paste0("Found interaction ",name))
       dat <- effRemove(consistency, dat)
       inters[name] <- effect
     } else {
@@ -379,7 +380,7 @@ episfa <- function(dat, nfolds, recursion = 5, criteria = "ebic",...){
   return(inters)
 }
     
-episfa_sim <- function(n_rep = 100, recursion = 2, cvfolds = 10, sim_func = simPopLE_l2_sp, sim_control = list(), criteria = "ebic",...){
+episfa_sim <- function(n_rep = 100, recursion = 5, cvfolds = 10, sim_func = simPopLE_l2_sp, sim_control = list(), criteria = "ebic",...){
     ncores <- detectCores()
     sprintf("running on %i cores",ncores)
     ## make cluster
@@ -387,7 +388,6 @@ episfa_sim <- function(n_rep = 100, recursion = 2, cvfolds = 10, sim_func = simP
     registerDoParallel(cl)
     ## hyperparameters
     num_interact <- sim_control[["int_num"]]
-    print(num_interact)
     ## looping
     benchmark <- foreach(i = 1:n_rep, 
                          .export = ls(.GlobalEnv), 
@@ -448,10 +448,14 @@ episfa_sim <- function(n_rep = 100, recursion = 2, cvfolds = 10, sim_func = simP
     alpha3 <- fp/(n_rep * recursion)
     power1 <- tpany/n_rep
     power2 <- tpall/n_rep
-    power3 <- tp/(n_rep * num_interact)
+    if (num_interact != 0 ){
+      power3 <- tp/(n_rep * num_interact)
+      ba3 <- (1-alpha3 + power3)/2
+    } else {
+      ba3 <- NULL
+    }
     ba1 <- (1-alpha1 + power1)/2
     ba2 <- (1-alpha2 + power2)/2
-    ba3 <- (1-alpha3 + power3)/2
     stopCluster(cl)
     return(list(
       alpha1 = alpha1,
