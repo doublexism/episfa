@@ -396,7 +396,7 @@ episfa_sim <- function(n_rep = 100, recursion = 5, cvfolds = 10, sim_func = simP
       time_start <- Sys.time()
       # simulate data
       simdata <- do.call(sim_func,sim_control)
-      inters <- interSNP(simdata) %>% map(paste0, collapse = "")
+      inters <- interSNP(simdata) %>% map_chr(paste0, collapse = "") 
       snp_name <- colnames(simdata) %>% str_subset('^SNP[0-9]$')
       df_co <- simdata[Y == 1,snp_name, with = FALSE] %>% as.matrix()
       # episfa run
@@ -412,7 +412,7 @@ episfa_sim <- function(n_rep = 100, recursion = 5, cvfolds = 10, sim_func = simP
       true_positive_any <- 0
       true_positive_all <- 0
       
-      inter_names <-names(result_episfa) 
+      inter_names <-names(na.omit(result_episfa))
       if (!is.na(result_episfa[[1]])){
         false_positive <- map_dbl(inter_names, interDiscover,inters) %>%
           sum()
@@ -472,7 +472,7 @@ episfa_sim <- function(n_rep = 100, recursion = 5, cvfolds = 10, sim_func = simP
 
 interDiscover <- function(candidate, inters){
   if (!is.null(inters)){
-    in_inters <- map_dbl(inters, ~any(. %in% candidate)) %>%
+    in_inters <- str_detect(candidate, inters) %>%
       sum() 
     return(ifelse(in_inters == 0, 1 ,0))
   } else {
