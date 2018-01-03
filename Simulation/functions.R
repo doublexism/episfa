@@ -326,7 +326,7 @@ cv.episfa <- function(x, nfolds,nfactor = NULL,sparsity = 0.05, type = "data", c
 }
 
 isInter<- function(inter1, inter.list){
-  consist <- map_dbl(inter.list, ~all(inter1 %in% .)) %>% sum
+  consist <- map_dbl(inter.list, ~any(inter1 %in% .)) %>% sum
   return(consist)
 }
 
@@ -362,7 +362,6 @@ episfa <- function(dat, nfolds, recursion = 5, criteria = "ebic",...){
     print(paste0("Searching for epistatic effects: number ",i,", ..."))
     result <- cv.episfa(dat, nfolds, nfactor = 1, type = "data",...)
     consistency <- map(1:length(criteria),~cv.consistency(result, criteria[.]))
-    print(consistency)
     # consistency <- consist
     elements <- lengths(consistency)
     if (sum(elements) >= 1) {
@@ -397,11 +396,11 @@ episfa_sim <- function(n_rep = 100, recursion = 5, cvfolds = 10, sim_func = simP
       time_start <- Sys.time()
       # simulate data
       simdata <- do.call(sim_func,sim_control)
-      inters <- interSNP(simdata) %>% map(paste0)
-      snp_name <- colnames(simdata) %>% str_subset('SNP[0-9]$')
+      inters <- interSNP(simdata) %>% map(paste0, collapse = "")
+      snp_name <- colnames(simdata) %>% str_subset('^SNP[0-9]$')
       df_co <- simdata[Y == 1,snp_name, with = FALSE] %>% as.matrix()
       # episfa run
-      result_episfa <- episfa(df_co, cvfolds, recursion = recursion, criteria = "ebic",...)
+      result_episfa <- episfa(df_co, cvfolds, recursion, criteria, ...)
       # inters <- c("SNP1SNP2","SNP3SNP4","SNP5SNP6")
       # result_episfa <- list(SNP1SNP2 = 3, SNP3SNP4 = 2, SNP5SNP7 = 1)
       ## false_positive 1: any unknown interaction effect is false dicovery
@@ -434,6 +433,7 @@ episfa_sim <- function(n_rep = 100, recursion = 5, cvfolds = 10, sim_func = simP
              tpany = true_positive_any,
              tpall = true_positive_all,
              result = result_episfa,
+             true_inter = inters,
              time = time_diff))
     }
     fp <- getListElement(benchmark,"fp") %>% sum()
@@ -472,7 +472,7 @@ episfa_sim <- function(n_rep = 100, recursion = 5, cvfolds = 10, sim_func = simP
 
 interDiscover <- function(candidate, inters){
   if (!is.null(inters)){
-    in_inters <- map_dbl(inters, ~all(. %in% candidate)) %>%
+    in_inters <- map_dbl(inters, ~any(. %in% candidate)) %>%
       sum() 
     return(ifelse(in_inters == 0, 1 ,0))
   } else {
