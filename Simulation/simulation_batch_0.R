@@ -12,5 +12,5 @@ sim_params1 <- expand.grid(n, snps, maf, p, or, int_lev, int_num) %>%
   t() %>%
   as.data.frame()
 
-scene12 <- map(sim_params1[1:2], simResults, sfa_control = list(eta = 0.025), n_rep = 5)
+scene12 <- map(sim_params1, simResults, sfa_control = list(eta = 0.025), n_rep = 5)
 
