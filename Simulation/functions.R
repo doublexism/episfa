@@ -356,7 +356,7 @@ episfa <- function(dat, nfolds, recursion = 5, criteria = "ebic",...){
   } else {
     criteria <-  paste0("nz_",criteria)
   }
-  inters <- list()
+  inters <- character()
   ## recursion
   for(i in 1:recursion) {
     print(paste0("Searching for epistatic effects: number ",i,", ..."))
@@ -369,6 +369,9 @@ episfa <- function(dat, nfolds, recursion = 5, criteria = "ebic",...){
       name <- names(effect)
       print(paste0("Found interaction ",name))
       dat <- effRemove(consistency, dat)
+       if (is.null(dat) || ncol(dat) < 2){
+         break()
+       }
       inters[name] <- effect
     } else {
       sprintf("no interaction found for criteria %s, algorithm halts", criteria)
@@ -381,15 +384,17 @@ episfa <- function(dat, nfolds, recursion = 5, criteria = "ebic",...){
     
 episfa_sim <- function(n_rep = 100, recursion = 5, cvfolds = 10, sim_func = simPopLE_l2_sp, sim_control = list(), criteria = "ebic",...){
     ncores <- detectCores()
-    sprintf("running on %i cores",ncores)
+    sprintf("running on %i cores",ncores) %>% 
+      print()
     ## make cluster
     cl <- makeCluster(ncores, rscript_args = c("--no-init-file", "--no-site-file", "--no-environ"))
     registerDoParallel(cl)
     ## hyperparameters
     num_interact <- sim_control[["int_num"]]
+    global_funcs <- lsf.str(.GlobalEnv) %>% as.vector()
     ## looping
     benchmark <- foreach(i = 1:n_rep, 
-                         .export = ls(.GlobalEnv), 
+                         .export = global_funcs, 
                          .packages = c("purrr","stringr","fanc","dplyr","sigmoid","truncnorm","data.table","cvTools", "foreach"),
                          .verbose = TRUE) %dopar% {
       #timing
@@ -413,12 +418,12 @@ episfa_sim <- function(n_rep = 100, recursion = 5, cvfolds = 10, sim_func = simP
       true_positive_all <- 0
       
       inter_names <-names(na.omit(result_episfa))
-      if (!is.na(result_episfa[[1]])){
+      if (!is.null(inter_names)){
         false_positive <- map_dbl(inter_names, interDiscover,inters) %>%
           sum()
         false_positive_any <- ifelse(false_positive > 0, 1, 0)
-        false_positive_all <- ifelse(false_positive == length(result_episfa), 1, 0)
-        true_positive <- length(result_episfa) - false_positive
+        false_positive_all <- ifelse(false_positive == length(inter_names), 1, 0)
+        true_positive <- length(inter_names) - false_positive
         # any interaction were discovered
         true_positive_any <- ifelse(true_positive > 0 , 1, 0)
         # all discovered interaction are positive 
