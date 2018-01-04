@@ -493,6 +493,22 @@ getListElement <- function(.l, name, simplify = TRUE){
   return(element)
 }
 
+simResults <- function(sim_control, sfa_control, n_rep = 100, recursion = 2, cvfolds = 5, sim_func = simPopLE_l2_sp, criteria = "ebic"){
+  sim_param <- sim_control %>% 
+    setNames(c("n", "snp_num", "maf","p","int_eff","int_lev","int_num")) %>%
+    as.list
+  scene <- episfa_sim(n_rep, 
+                    recursion,
+                    cvfolds, 
+                  sim_func,
+                   sim_param, 
+                   criteria,
+                    sfa_control)
+  name <- pmap_chr(sim_param, paste, sep = '-')
+  write_rds(scene,paste0("intern1p05", name,".rds"))
+  return(scene)
+}
+
 svd_compress <- function(dat, depth = NULL){
   n <- nrow(dat)
   p <- ncol(dat)
@@ -590,6 +606,7 @@ permuteMatrix <- function(mat, margin = 2){
   mat <- mat[,nums]
   return(mat)
 }
+
 
 # sib_geno <- test1200[!is.na(mid),] %>% arrange(fid)
 # sib_geno <- sib_geno[,1:200]

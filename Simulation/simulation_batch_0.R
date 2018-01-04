@@ -1,22 +1,16 @@
-sim_param1 <- list(n = 1000, snp_num = 50, maf = 0.25, p = 0.05, int_eff = 1.5, int_lev = 2, int_num = 1, m_eff = NULL, mode = NULL)
-sim_param2 <- list(n = 1000, snp_num = 50, maf = 0.25, p = 0.05, int_eff = 2, int_lev = 2, int_num = 1, m_eff = NULL, mode = NULL)
+n <- c(1000, 2000, 4000)
+snps <- c(50, 100, 200)
+maf <- c(0.1, 0.25, 0.5)
+p <- c(0.05)
+or <- c(1.5, 2, 2.5)
+int_lev <- c(2)
+int_num <- c(1)
 
-sfa_control1 <- list(eta = 0.01)
-sfa_control2 <- list(eta = 0.025)
-sfa_control3 <- list(eta = 0.05)
+sim_params1 <- expand.grid(n, snps, maf, p, or, int_lev, int_num) %>% 
+  setnames(c("n", "snp_num", "maf","p","int_eff","int_lev","int_num")) %>%
+  arrange(maf, snp_num, n) %>%
+  t() %>%
+  as.data.frame()
 
-scene10 <- episfa_sim(n_rep = 5, recursion = 2,cvfolds = 10, sim_func = simPopLE_l2_sp, sim_control = sim_param1, criteria = "ebic",sfa_control1)
-scene101 <- episfa_sim(n_rep = 10, recursion = 2,cvfolds = 10, sim_func = simPopLE_l2_sp, sim_control = sim_param1, criteria = "kl",sfa_control1)
-scene102 <- episfa_sim(n_rep = 10, recursion = 2,cvfolds = 10, sim_func = simPopLE_l2_sp, sim_control = sim_param1, criteria = "hbic",sfa_control1)
-
-
-scene11 <- episfa_sim(n_rep = 100, recursion = 2,cvfolds = 5, sim_func = simPopLE_l2_sp, sim_control = sim_param1, criteria = "ebic",sfa_control1)
-scene12 <- episfa_sim(n_rep = 100, recursion = 2,cvfolds = 5, sim_func = simPopLE_l2_sp, sim_control = sim_param1, criteria = "ebic",sfa_control2)
-scene13 <- episfa_sim(n_rep = 100, recursion = 2,cvfolds = 5, sim_func = simPopLE_l2_sp, sim_control = sim_param1, criteria = "ebic",sfa_control3)
-scene21 <- episfa_sim(n_rep = 100, recursion = 2,cvfolds = 5, sim_func = simPopLE_l2_sp, sim_control = sim_param2, criteria = "ebic",sfa_control1)
-scene22 <- episfa_sim(n_rep = 100, recursion = 2,cvfolds = 5, sim_func = simPopLE_l2_sp, sim_control = sim_param2, criteria = "ebic",sfa_control2)
-scene23 <- episfa_sim(n_rep = 100, recursion = 2,cvfolds = 5, sim_func = simPopLE_l2_sp, sim_control = sim_param2, criteria = "ebic",sfa_control3)
-
-
-write_rds(list(scene11,scene12,scene13,scene21,scene22,scene23), "scene1_result.rds")
+scene12 <- map(sim_params1[1:2], simResults, sfa_control = list(eta = 0.025), n_rep = 5)
 
