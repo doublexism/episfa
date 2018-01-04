@@ -505,7 +505,7 @@ simResults <- function(sim_control, sfa_control, n_rep = 100, recursion = 2, cvf
                    criteria,
                     sfa_control)
   name <- pmap_chr(sim_param, paste, sep = '-')
-  write_rds(scene,paste0("intern1p05", name,".rds"))
+  write_rds(scene,paste0("results/intern1p05", name,".rds"))
   return(scene)
 }
 
