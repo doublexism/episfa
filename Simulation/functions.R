@@ -383,7 +383,7 @@ episfa <- function(dat, nfolds, recursion = 5, criteria = "ebic",...){
 }
     
 episfa_sim <- function(n_rep = 100, recursion = 5, cvfolds = 10, sim_func = simPopLE_l2_sp, sim_control = list(), criteria = "ebic",...){
-    ncores <- detectCores()
+    ncores <- detectCores(logical = FALSE)
     sprintf("running on %i cores",ncores) %>% 
       print()
     ## make cluster
@@ -402,9 +402,9 @@ episfa_sim <- function(n_rep = 100, recursion = 5, cvfolds = 10, sim_func = simP
       # simulate data
       simdata <- do.call(sim_func,sim_control)
       inters <- interSNP(simdata) %>% map_chr(paste0, collapse = "") 
-      snp_name <- colnames(simdata) %>% str_subset('^SNP[0-9]$')
+      snp_name <- colnames(simdata) %>% str_subset('^SNP[0-9]+$')
       df_co <- simdata[Y == 1,snp_name, with = FALSE] %>% as.matrix()
-      # episfa run
+      # episfa runsss
       result_episfa <- episfa(df_co, cvfolds, recursion, criteria, ...)
       # inters <- c("SNP1SNP2","SNP3SNP4","SNP5SNP6")
       # result_episfa <- list(SNP1SNP2 = 3, SNP3SNP4 = 2, SNP5SNP7 = 1)
@@ -493,7 +493,7 @@ getListElement <- function(.l, name, simplify = TRUE){
   return(element)
 }
 
-simResults <- function(sim_control, sfa_control, n_rep = 100, recursion = 2, cvfolds = 5, sim_func = simPopLE_l2_sp, criteria = "ebic"){
+simResults <- function(sim_control, sfa_control, n_rep = 100, recursion = 2, cvfolds = 5, sim_func = simPopLE_l2_sp, criteria = "ebic", save = TRUE){
   sim_param <- sim_control %>% 
     setNames(c("n", "snp_num", "maf","p","int_eff","int_lev","int_num")) %>%
     as.list
@@ -505,7 +505,9 @@ simResults <- function(sim_control, sfa_control, n_rep = 100, recursion = 2, cvf
                    criteria,
                     sfa_control)
   name <- pmap_chr(sim_param, paste, sep = '-')
-  write_rds(scene,paste0("results/intern1p05", name,".rds"))
+  if (save == TRUE){
+    write_rds(scene,paste0("results/intern1p05", name,".rds"))
+  }
   return(scene)
 }
 
