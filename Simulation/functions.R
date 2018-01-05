@@ -382,8 +382,10 @@ episfa <- function(dat, nfolds, recursion = 5, criteria = "ebic",...){
   return(inters)
 }
     
-episfa_sim <- function(n_rep = 100, recursion = 5, cvfolds = 10, sim_func = simPopLE_l2_sp, sim_control = list(), criteria = "ebic",...){
-    ncores <- detectCores(logical = FALSE)
+episfa_sim <- function(n_rep = 100, recursion = 5, cvfolds = 10, ncores = NULL,sim_func = simPopLE_l2_sp, sim_control = list(), criteria = "ebic",...){
+    if (is.null(ncores)){
+      ncores <- detectCores(logical = FALSE)
+    }
     sprintf("running on %i cores",ncores) %>% 
       print()
     ## make cluster
