@@ -495,13 +495,14 @@ getListElement <- function(.l, name, simplify = TRUE){
   return(element)
 }
 
-simResults <- function(sim_control, sfa_control, n_rep = 100, recursion = 2, cvfolds = 5, sim_func = simPopLE_l2_sp, criteria = "ebic", save = TRUE){
+simResults <- function(sim_control, sfa_control, n_rep = 100, recursion = 2, cvfolds = 5,ncores = NULL, sim_func = simPopLE_l2_sp, criteria = "ebic", save = TRUE){
   sim_param <- sim_control %>% 
     setNames(c("n", "snp_num", "maf","p","int_eff","int_lev","int_num")) %>%
     as.list
   scene <- episfa_sim(n_rep, 
                     recursion,
                     cvfolds, 
+                    ncores,
                   sim_func,
                    sim_param, 
                    criteria,
