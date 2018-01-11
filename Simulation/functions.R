@@ -6,6 +6,7 @@ library(svd)
 library(foreach)
 library(fanc)
 tr <- psych::tr
+map <- purrr::map
 
 log_trans <- function(Mat, offset){
   return(log(Mat + offset))
