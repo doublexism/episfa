@@ -216,11 +216,11 @@ cv.episfa <- function(x, nfolds,nfactor = NULL,sparsity = 0.05, type = "data", c
     nfactor <- sparsity*ncol(x)
   } 
   print(paste0("The size of matrix is ", dim(x)))
-  print(paste0("The number of factors is ", nfactor))
+#  print(paste0("The number of factors is ", nfactor))
   folds <- cvFolds(nrow(x), K=nfolds)
   # cross validation
-  r <- foreach(i=1:nfolds) %do% {
-    print(paste0("cross validate round",i))
+  r <- foreach(i=1:nfolds, .verbose = FALSE) %do% {
+#    print(paste0("cross validate round",i))
     timestamp()
     train <- x[folds$subsets[folds$which != i], ]
     validation <- x[folds$subsets[folds$which == i], ]
@@ -241,9 +241,9 @@ cv.episfa <- function(x, nfolds,nfactor = NULL,sparsity = 0.05, type = "data", c
     # extract statistics
     loadings <- reduce(result$loadings, c)
     ui <- plyr::alply(result$uniquenesses,c(1,3),`[`)
-    print("begin to calc kl")
-    kl <- map2_dbl(loadings, ui, kullback, test = validation)
-    print("finished")
+#    print("begin to calc kl")
+#    kl <- map2_dbl(loadings, ui, kullback, test = validation)
+#    print("finished")
     aic <- as.vector(result$AIC_dfnonzero)
     bic <- as.vector(result$BIC_dfnonzero)
     caic <- as.vector(result$CAIC_dfnonzero)
@@ -257,7 +257,7 @@ cv.episfa <- function(x, nfolds,nfactor = NULL,sparsity = 0.05, type = "data", c
     hbic0.75 <- HBIC(bic, p = result$factors *ncol(train), df = df, gamma = 0.75)
     hbic1 <- HBIC(bic, p = result$factors *ncol(train), df = df, gamma = 1)
     # extract interactions
-    best_kl <- best_gr(kl, nonzero)
+#    best_kl <- best_gr(kl, nonzero)
     best_aic <- best_gr(aic, nonzero)
     best_caic <- best_gr(caic, nonzero)
     best_bic <- best_gr(bic, nonzero)
@@ -268,7 +268,7 @@ cv.episfa <- function(x, nfolds,nfactor = NULL,sparsity = 0.05, type = "data", c
     best_hbic0.75<- best_gr(hbic0.75, nonzero)
     best_hbic1<- best_gr(hbic1, nonzero)
     # extract loadings
-    loading_kl <- best_loading(result, best_kl)
+#    loading_kl <- best_loading(result, best_kl)
     loading_aic <- best_loading(result, best_aic)
     loading_caic <- best_loading(result, best_caic)
     loading_bic <- best_loading(result, best_bic)
@@ -279,7 +279,7 @@ cv.episfa <- function(x, nfolds,nfactor = NULL,sparsity = 0.05, type = "data", c
     loading_hbic0.75 <- best_loading(result, best_hbic0.75)
     loading_hbic1 <- best_loading(result, best_hbic1)
     # extract non zero loadings
-    nz_kl <- nonZeroLoad(loading_kl$loadings, coef = FALSE)
+#    nz_kl <- nonZeroLoad(loading_kl$loadings, coef = FALSE)
     nz_aic <- nonZeroLoad(loading_aic$loadings, coef = FALSE)
     nz_caic <- nonZeroLoad(loading_caic$loadings, coef = FALSE)
     nz_bic <- nonZeroLoad(loading_bic$loadings, coef = FALSE)
@@ -290,7 +290,7 @@ cv.episfa <- function(x, nfolds,nfactor = NULL,sparsity = 0.05, type = "data", c
     nz_hbic0.75 <- nonZeroLoad(loading_hbic0.75$loadings, coef = FALSE)
     nz_hbic1 <- nonZeroLoad(loading_hbic1$loadings, coef = FALSE)
     # return results
-    return(list(kl  = matrix(kl, nrow  = 30),
+    return(list(#kl  = matrix(kl, nrow  = 30),
                 bic = matrix(bic,nrow = 30),
                 ebic0.5 = matrix(ebic0.5,nrow =30),
                 ebic0.75 = matrix(ebic0.75, nrow = 30),
@@ -301,7 +301,7 @@ cv.episfa <- function(x, nfolds,nfactor = NULL,sparsity = 0.05, type = "data", c
                 nonzero = matrix(nonzero,nrow = 30),
                 factors = result$factors,
                 time = result$time,
-                nz_kl = nz_kl, 
+#                nz_kl = nz_kl, 
                 nz_aic=nz_aic, 
                 nz_caic = nz_caic,
                 nz_bic = nz_bic, 
@@ -311,7 +311,7 @@ cv.episfa <- function(x, nfolds,nfactor = NULL,sparsity = 0.05, type = "data", c
                 nz_hbic0.5 = nz_hbic0.5,
                 nz_hbic0.75 = nz_hbic0.75,
                 nz_hbic1 = nz_hbic1,
-                loading_kl = loading_kl,
+#                loading_kl = loading_kl,
                 loading_aic = loading_aic,
                 loading_caic = loading_caic,
                 loading_bic = loading_bic,
@@ -343,9 +343,11 @@ cv.consistency <- function(episfa.obj, stat){
 }
 
 effRemove <- function(consistency, data){
-  best <- names(consistency[[1]][1])
+  best <- consistency
   snps <- str_extract_all(best,"SNP[0-9]*") %>% unlist() 
   cols <- setdiff(colnames(data), snps)
+#  print(snps)
+#  print(cols)
   dat <- data[,cols]
   return(dat)
 }
@@ -359,22 +361,23 @@ episfa <- function(dat, nfolds, recursion = 5, criteria = "ebic",...){
   inters <- character()
   ## recursion
   for(i in 1:recursion) {
-    print(paste0("Searching for epistatic effects: number ",i,", ..."))
+#    print(paste0("Searching for epistatic effects: number ",i,", ..."))
     result <- cv.episfa(dat, nfolds, nfactor = 1, type = "data",...)
     consistency <- map(1:length(criteria),~cv.consistency(result, criteria[.]))
+    print(consistency)
     # consistency <- consist
     elements <- lengths(consistency)
     if (sum(elements) >= 1) {
       effect <- consistency[elements >= 1][[1]][1]
       name <- names(effect)
-      print(paste0("Found interaction ",name))
-      dat <- effRemove(consistency, dat)
+#      print(paste0("Found interaction ",name))
+      dat <- effRemove(name, dat)
        if (is.null(dat) || ncol(dat) < 2){
          break()
        }
       inters[name] <- effect
     } else {
-      sprintf("no interaction found for criteria %s, algorithm halts", criteria)
+#      sprintf("no interaction found for criteria %s, algorithm halts", criteria)
       inters[i] <- NA
       break()
     }
@@ -386,10 +389,10 @@ episfa_sim <- function(n_rep = 100, recursion = 5, cvfolds = 10, ncores = NULL,s
     if (is.null(ncores)){
       ncores <- detectCores(logical = FALSE)
     }
-    sprintf("running on %i cores",ncores) %>% 
-      print()
+#    sprintf("running on %i cores",ncores) %>% 
+#      print()
     ## make cluster
-    cl <- makeCluster(ncores, rscript_args = c("--no-init-file", "--no-site-file", "--no-environ"))
+    cl <- makeCluster(ncores,outfile = "info180110.txt",rscript_args = c("--no-init-file", "--no-site-file", "--no-environ"))
     registerDoParallel(cl)
     ## hyperparameters
     num_interact <- sim_control[["int_num"]]
@@ -398,7 +401,7 @@ episfa_sim <- function(n_rep = 100, recursion = 5, cvfolds = 10, ncores = NULL,s
     benchmark <- foreach(i = 1:n_rep, 
                          .export = global_funcs, 
                          .packages = c("purrr","stringr","fanc","dplyr","sigmoid","truncnorm","data.table","cvTools", "foreach"),
-                         .verbose = TRUE) %dopar% {
+                         .verbose = FALSE) %dopar% {
       #timing
       time_start <- Sys.time()
       # simulate data
@@ -613,6 +616,257 @@ permuteMatrix <- function(mat, margin = 2){
 }
 
 
+
+## fam-mdr
+as.SNPs <- function(dat, num_snps){
+  SNPs <- dat[,1:num_snps] + 1
+  SNPs <- as.data.frame(SNPs)
+  return(SNPs)
+}
+
+as.pedigree <- function(dat){
+  pedigree <- dat[,c("fid","sid","mid","faid","sex"), with = FALSE]
+  pedigree$sid[pedigree$sid %in% c(1,2)] <- paste0(pedigree$fid[pedigree$sid %in% c(1,2)],pedigree$sid[pedigree$sid %in% c(1,2)])
+  pedigree <- as.data.frame(pedigree)
+  return(pedigree)
+}
+
+as.pheno <- function(dat){
+  cov <- paste0("cov",1:10)
+  pheno <- dat[,c("Y","sex","age",cov),with = FALSE] %>%
+    as.data.frame()
+  return(pheno)
+}
+
+kinship_sib <- function(dat){
+  n <- nrow(dat)/2
+  mat <- matrix(c(0.5,0.25,0.25,0.5),2,2)
+  kin <- bdiag(map(1:n, function(x) mat)) %>% as.matrix()
+  return(kin)
+}
+
+formBuild <- function(outcome, num_SNPs, covs = NULL, strata = NULL){
+  SNPs <- paste0("SNP",1:num_SNPs) %>% c(covs)
+  if (is.null(strata)){
+    form <- paste0(outcome,"~", paste0(SNPs,collapse = "+")) %>%
+      as.formula()
+  } else {
+    form <- paste0(outcome,"~", paste0(SNPs,collapse = "+"), "+strata(",strata,")") %>%
+      as.formula() 
+  }
+  return(form)
+}
+
+addParents <- function(pedfile){
+  pedfile$mid <- paste0(pedfile$mid,"p")
+  pedfile$faid <- paste0(pedfile$faid, "p")
+  pedfile$sid <- as.character(pedfile$sid)
+  mo <- pedfile[,c("fid","mid"),with=FALSE] 
+  fa <- pedfile[,c("fid","faid"),with=FALSE]
+  colnames(mo) <-c("fid","sid")
+  colnames(fa) <-c("fid","sid")
+  parents <- bind_rows(mo,fa) %>% distinct()
+  pedfile <- pedfile %>% union_all(parents)
+  return(pedfile)
+}
+
+permuteY <- function(Y){
+  Y <- sample(Y, length(Y), replace = FALSE)
+  return(Y)
+}
+
+fammdr <- function(dat,null_p = NULL, P = 0.1){
+  SNP_names <- colnames(dat) %>% str_subset("^SNP[0-9]*$")
+  nsnp <- length(SNP_names)
+  SNPS <- as.SNPs(dat, nsnp)
+  pedigree <- as.pedigree(dat)
+  phenotype <- as.pheno(dat)
+  SNPs.factor <- map_dfc(SNPS, as.factor)
+  genopheno <- bind_cols(SNPs.factor,phenotype)
+  # kin <- kinship(pedigree[[2]][1:4],pedigree[[3]][1:4],pedigree[[4]][1:4])
+  kin <- kinship_sib(pedigree)
+  rownames(kin) <- 1:nrow(genopheno)
+  colnames(kin) <- 1:nrow(genopheno)
+  form <- formBuild("Y",nsnp)
+  Yfit = polygenic(form,kin,genopheno,trait.type="binomial", quiet = TRUE)
+  yres <- Yfit$pgresidualY
+  
+  for (j in 1:ncol(SNPS)) SNPS[,j] <- as.factor(SNPS[,j])
+  EXPO <- list()
+  EXPO[["0"]] <- (SNPS==0)
+  EXPO[["1"]] <- (SNPS==1)
+  EXPO[["2"]] <- (SNPS==2)
+  mdr <- MBMDR(yres,EXPO,SNPS,ESTRAT =NULL,PVAL=P,dimen=2,first.model=NULL,AJUST=0,list.models=NULL,correction=F)
+  m <- which.min(mdr[,6])
+  SNPs <- mdr[m,1:2]
+  inters <- paste0("SNP",SNPs, collapse = "")
+  p_min <-  mdr[m,6] %>% as.numeric()
+  if (!is.null(null_p)){
+    if (p_min <= null_p){
+      p_val <- c(p_min) %>% setNames(intersS)
+      return(p_val)
+    } else {
+      return(NULL)
+    }
+  } else {
+    return(p_min)
+  }
+  #  null_p <- numeric(permutation)
+  #  dist <- 1
+  #  print(p_min)
+  ## permutation
+  #  for (perm_n in 1:permutation){
+  #    yres <- permuteY(yres)
+  #    mdr <- MBMDR(yres,EXPO,SNPS,ESTRAT =NULL,PVAL=P,dimen=2,first.model=NULL,AJUST=0,list.models=NULL,correction=F)
+  #   null_p[perm_n] <- mdr[which.min(mdr[,6]),6] %>% as.numeric()
+  # print(null_p)
+  #    if (null_p[perm_n] < p_min){
+  #      dist <- dist + 1
+  #    } 
+  #   if (dist >= 2){
+  #      break
+  #   }
+  #  }
+  #  p_permute <- 1 - sum(null_p >= p_min)/permutation
+  #  if (p_permute <= 0.05){
+  #    return(c(inters = p_min))
+  #  } else {
+  #    print("no interaction found")
+  #   return(NULL)
+  # }
+}
+
+fammdr_sim <- function(n_rep = 100,P = 0.5,null_p = NULL, ncores = NULL,sim_func = simPopLE_l2_sp, sim_control = list(), verbose = TRUE){
+  if (is.null(ncores)){
+    ncores <- detectCores(logical = FALSE)
+  }
+  #  sprintf("running on %i cores",ncores) %>% 
+  #    print()
+  ## make cluster
+  cl <- makeCluster(ncores,outfile = "log0111.txt",rscript_args = c("--no-init-file", "--no-site-file", "--no-environ"))
+  registerDoParallel(cl)
+  ## hyperparameters
+  num_interact <- sim_control[["int_num"]]
+  
+  global_funcs <- lsf.str(.GlobalEnv) %>% as.vector()
+  ## looping
+  tryCatch({
+    benchmark <- foreach(i = 1:n_rep, 
+                         .export = global_funcs, 
+                         .packages = c("purrr","stringr","GenABEL","dplyr","sigmoid","truncnorm","data.table","cvTools", "foreach","Matrix"),
+                         .verbose = verbose) %dopar% {
+                           #timing
+                           time_start <- Sys.time()
+                           # simulate data
+                           simdata <- do.call(sim_func,sim_control)
+                           inters <- interSNP(simdata) %>% map_chr(paste0, collapse = "") 
+                           snp_name <- colnames(simdata) %>% str_subset('^SNP[0-9]+$')
+                           # fammdr runsss
+                           result_mdr <- fammdr(simdata, null_p, P)
+                           if (is.null(null_p)){
+                             return(result_mdr)
+                           }
+                           # inters <- c("SNP1SNP2","SNP3SNP4","SNP5SNP6")
+                           # result_episfa <- list(SNP1SNP2 = 3, SNP3SNP4 = 2, SNP5SNP7 = 1)
+                           ## false_positive 1: any unknown interaction effect is false dicovery
+                           false_positive <- 0
+                           false_positive_any <- 0
+                           false_positive_all <- 0
+                           ## true_positive 2: the proportion of false discovered effects among all discovered effects
+                           true_positive <- 0
+                           true_positive_any <- 0
+                           true_positive_all <- 0
+                           
+                           inter_names <-names(na.omit(result_mdr))
+                           if (!is.null(inter_names)){
+                             false_positive <- map_dbl(inter_names, interDiscover,inters) %>%
+                               sum()
+                             false_positive_any <- ifelse(false_positive > 0, 1, 0)
+                             false_positive_all <- ifelse(false_positive == length(inter_names), 1, 0)
+                             true_positive <- length(inter_names) - false_positive
+                             # any interaction were discovered
+                             true_positive_any <- ifelse(true_positive > 0 , 1, 0)
+                             # all discovered interaction are positive 
+                             true_positive_all <- ifelse(true_positive == num_interact, 1, 0)
+                           }
+                           time_end <- Sys.time()
+                           time_diff <- round(as.numeric(time_end - time_start),1)
+                           return(list(fp = false_positive,
+                                       fpany = false_positive_any,
+                                       fpall = false_positive_all,
+                                       tp = true_positive,
+                                       tpany = true_positive_any,
+                                       tpall = true_positive_all,
+                                       result = result_mdr,
+                                       true_inter = inters,
+                                       time = time_diff))
+                         }
+    if (is.null(null_p)){
+      benchmark <- as.numeric(benchmark) %>% sort()
+      p95 <- benchmark[round(n_rep * 0.95)]
+      stopCluster(cl)
+      return(p95)
+    }
+    fp <- getListElement(benchmark,"fp") %>% sum()
+    fpany <- getListElement(benchmark,"fpany") %>% sum()
+    fpall <- getListElement(benchmark,"fpall") %>% sum()
+    tp <- getListElement(benchmark,"tp") %>% sum()
+    tpany <- getListElement(benchmark,"tpany") %>% sum()
+    tpall <- getListElement(benchmark,"tpall") %>% sum()
+    # alpha, power and ba
+    alpha1 <- fpany/n_rep
+    alpha2 <- fpall/n_rep
+    alpha3 <- fp/(n_rep)
+    power1 <- tpany/n_rep
+    power2 <- tpall/n_rep
+    if (num_interact != 0 ){
+      power3 <- tp/(n_rep * num_interact)
+      ba3 <- (1-alpha3 + power3)/2
+    } else {
+      ba3 <- NULL
+    }
+    ba1 <- (1-alpha1 + power1)/2
+    ba2 <- (1-alpha2 + power2)/2
+    stopCluster(cl)
+    return(list(
+      alpha1 = alpha1,
+      alpha2 = alpha2,
+      alpha3 = alpha3,
+      power1 = power1,
+      power2 = power2,
+      power3 = power3,
+      ba1 = ba1,
+      ba2 = ba2,
+      ba3 = ba3,
+      benchmark = benchmark))
+  },
+  error = function(e){
+    print(e)
+    stopCluster(cl)
+  })
+  
+}
+
+
+simResults_mdr <- function(sim_control,null_p = NULL, n_rep = 100,  P = 0.1,ncores = NULL, sim_func = simPopLE_l2_sp, save = TRUE, verbose = TRUE){
+  sim_param <- sim_control %>% 
+    setNames(c("n", "snp_num", "maf","p","int_eff","int_lev","int_num")) %>%
+    as.list
+  
+  scene <- fammdr_sim(n_rep, 
+                      P, 
+                      null_p,
+                      ncores,
+                      sim_func,
+                      sim_param,
+                      verbose
+  )
+  name <- pmap_chr(sim_param, paste, sep = '-')
+  if (save == TRUE){
+    write_rds(scene,paste0("results/intern1p05_mdr", name,".rds"))
+  }
+  return(scene)
+}
 # sib_geno <- test1200[!is.na(mid),] %>% arrange(fid)
 # sib_geno <- sib_geno[,1:200]
 # pat_geno <- test1200[is.na(mid),] %>% arrange(fid)

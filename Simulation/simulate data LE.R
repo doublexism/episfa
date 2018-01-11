@@ -268,8 +268,8 @@ simPopLE <- function(N,
       beta_inter_offset_idx <- SNP_inter_idx(level, num_interact)
       beta_inter_offset <- beta_inter[beta_inter_offset_idx] %>%
         matrix(ncol = length(SNP_idx))
-      print(ex_inter_offset)
-      print(beta_inter_offset)
+#      print(ex_inter_offset)
+#      print(beta_inter_offset)
       offset_effect <- ex_inter_offset %*% beta_inter_offset %>% as.numeric()
     } else {
       margin_effect <- main_effect
@@ -333,7 +333,7 @@ simPopLE <- function(N,
   #total variance and multiplier
   beta_sq <- beta**2
   total_variance <- sum(variance %*% beta_sq)
-  print(total_variance)
+#  print(total_variance)
   lambda_sq <- pi/8
   multiplier <- sqrt(1+lambda_sq*total_variance)
   
@@ -348,7 +348,7 @@ simPopLE <- function(N,
   # update beta
   beta[1] <- (logit(p))*multiplier - offset
   # print(ex_x)
-  print(beta)
+#  print(beta)
   df_sib$Y <- logistic_func(X, beta)
   
   } else if (model == "cox"){
