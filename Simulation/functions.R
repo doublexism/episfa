@@ -184,7 +184,7 @@ simVal <- function(dat, subset = NULL){
   return(list(cc= result_cc, co = result_co))
 }
 
-cv.episfa <- function(x, nfolds,nfactor = NULL,sparsity = 0.05, type = "data", contrast = NULL, ...){
+cv.episfa <- function(x, nfolds,nfactor = NULL,sparsity = 0.05, type = "data", family_based = FALSE,ld = FALSE, famid = "fid", contrast = NULL, ...){
  
   # function to extract best gamma and rho
   best_gr <- function(stat, nzl, n = 270){
@@ -216,6 +216,11 @@ cv.episfa <- function(x, nfolds,nfactor = NULL,sparsity = 0.05, type = "data", c
   if (is.null(nfactor)){
     nfactor <- sparsity*ncol(x)
   } 
+  
+  if (type != "data" & ld == TRUE){
+    stop("original data must be avaible to control ld")
+  }
+  
   print(paste0("The size of matrix is ", dim(x)))
 #  print(paste0("The number of factors is ", nfactor))
   folds <- cvFolds(nrow(x), K=nfolds)
@@ -353,7 +358,7 @@ effRemove <- function(consistency, data){
   return(dat)
 }
 
-episfa <- function(dat, nfolds, recursion = 5, criteria = "ebic",...){
+episfa <- function(dat, nfolds, recursion = 1, criteria = "ebic",...){
   if (criteria  %in% c("ebic","hbic")){
     criteria <- paste0("nz_",criteria,c(1, 0.75, 0.5))
   } else {
@@ -556,11 +561,8 @@ HBIC <- function(BIC, p, df, gamma){
   return(BIC - log(p)*df + 2*gamma*log(p)*df)
 }
 
-partial <- function(y, X){
-  X <- cbind(rep(1,nrow(X)),X)
-  hat <- X %*% solve((t(X)%*%X)) %*% t(X) %*% y 
-  res <- y - hat
-  return(as.vector(res))
+partial <- function(case, control){
+  partial.m <- partial.r(control)
 }
 
 
@@ -876,6 +878,8 @@ simResults_mdr <- function(sim_control,null_p = NULL, n_rep = 100,  P = 0.1,ncor
   }
   return(scene)
 }
+
+
 # sib_geno <- test1200[!is.na(mid),] %>% arrange(fid)
 # sib_geno <- sib_geno[,1:200]
 # pat_geno <- test1200[is.na(mid),] %>% arrange(fid)

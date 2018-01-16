@@ -1,8 +1,9 @@
-test1 <- simPopLE_l2_sp(1000, 50, 0.2, 0.05, 2, 2, 2)
+test1 <- simPopLE_l2_sp(1000, 50, 0.2, 0.05, 2, 2, 1)
 test2 <- simPopLE_l2_sp(1000, 100, 0.2, 0.05, 2, 3, 1)
 test3 <- simPopLE_l2_sp(1000, 100, 0.2, 0.05, 2, 4, 1)
 test4 <- simPopLE_l2_sp(1000, 100, 0.2, 0.05, 2, 5, 1)
 df_co1 <- as.matrix(test1[Y == 1, 1:50])
+control1 <- as.matrix(test1[Y == 0, 1:50])
 
 df_co2 <- as.matrix(test2[Y == 1, 1:100])
 df_co2log <- log_trans(df_co2, offset = 2)
@@ -70,4 +71,18 @@ result <- fanc(factors=2, covmat = co_dat, n.obs = 2000)
 test1 <- sample_frac(test, 1, replace = TRUE)
 
 lm(SNP3~SNP4, data = test[Y==1]) %>% summary()
-clogit(Y ~ SNP20 + SNP70 + SNP85+SNP20:SNP70:SNP85 +strata(fid), data = test1) %>% summary()
+clogit(Y ~ SNP18 + SNP37 + SNP18:SNP37 +strata(fid), data = test1) %>% summary()
+clogit(Y ~ SNP1 + SNP2 + SNP1:SNP2 +strata(fid), data = test1) %>% summary()
+
+small_control <- control1[,1:4]
+
+pcor_control <- cor2pcor(cor(small_control))
+
+lm(SNP1 ~ SNP1 + SNP2 + SNP3 + SNP4, data = test1[Y == 0,1:4],)
+cor_case1 <- cor(df_co1)
+cor_control1 <- cor(control1)
+cor_cc <- diag(ncol(df_co1))+cor_case1 - cor_control1
+
+result1 <- fanc(df_co1, factors = 1, control = (eta = 0.025))
+
+result2 <- fanc(covmat = cor_cc, n.obs = 1000, factors = 1, control = (eta = 0.005))
