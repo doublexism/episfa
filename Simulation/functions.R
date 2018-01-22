@@ -1008,7 +1008,7 @@ simResults_mdr <- function(sim_control,null_p = NULL, n_rep = 100,  P = 0.1,ncor
     write_rds(scene,paste0("results/intern1p05_mdr", name,".rds"))
   }
   return(scene)
-}
+}  
 
 
 # sib_geno <- test1200[!is.na(mid),] %>% arrange(fid)
