@@ -10,7 +10,6 @@ simPopLE <- function(N,
                      MAF,  
                      main_effect, 
                      interaction_effect, 
-                     r = 0,
                      margin_effect = NULL,
                      cov_effect = 1.2, 
                      level = 2, 
@@ -33,7 +32,7 @@ simPopLE <- function(N,
                      age_varw = 5,
                      num_cov = 10,
                      cov_sigma = NULL,
-                     population = FALSE,
+                     population = TRUE,
                      Sequencial = TRUE
                      ) {
   
@@ -212,22 +211,8 @@ simPopLE <- function(N,
   MA_freq <- c((1-MAF)**2, 2*MAF*(1-MAF), MAF**2)
 
   ## parent genotype
-  sigma_gen <- matrix(rep(r, num_SNP**2), num_SNP)
-  sigma_gen_poly <-matrix(rep(1:num_SNP,each = num_SNP), num_SNP) - matrix(rep(1:num_SNP, num_SNP), num_SNP)
-  sigma_gen_poly <- abs(sigma_gen_poly)
-  sigma_gen <- sigma_gen ** sigma_gen_poly
-  
-  genotype_parents <- MASS::mvrnorm(n = FG_num,mu = rep(0, num_SNP), Sigma = sigma_gen) 
-  
-  cutoff <- c((1-MAF)**2,1 - MAF**2) %>% qnorm()
-  
-  index1 <- genotype_parents > cutoff[2] 
-  index2 <- genotype_parents < cutoff[2] & genotype_parents > cutoff[1]
-  index3 <- genotype_parents < cutoff[1]
-  genotype_parents[index1] <- 1
-  genotype_parents[index2] <- 0
-  genotype_parents[index3] <- -1
-  
+  genotype_parents <- sample(x=c(-1,0,1),size = num_SNP*FG_num, prob = MA_freq, replace=TRUE) %>% 
+    matrix(ncol = num_SNP)
   SNP_names <- paste0("SNP", 1:num_SNP)
   SNP_names_d <- paste0(SNP_names, "d")
   genotype_parents <- addDom(genotype_parents, SNP_names) %>% as.data.frame()
@@ -385,7 +370,6 @@ simPopLE <- function(N,
                     MAF,  
                     main_effect, 
                     interaction_effect, 
-                    r,
                     margin_effect = NULL,
                     cov_effect,
                     level, 
@@ -422,24 +406,11 @@ simPopLE <- function(N,
   return(df_sib)
 }
 
-
-
-sib_sim <- function(num_strata, MAF_strata, P_strata, proportion_strata, simControl = list()){
-  callSimFunc <- function(MAF, p, N, parameters){
-    parameters[["MAF"]] <- MAF
-    parameters[["p"]] <- p
-    parameters[["N"]] <- N
-    dat <- do.call(simPopLE,parameters)
-    return(dat)
-  }
-  
-  N <- simControl[["N"]]
-  num <- N * proportion_strata
-  dat <- pmap_dfr(list(MAF_strata, P_strata, num), callSimFunc, simControl)
-  return(dat)
+sib_sim <- function(n, name, ...){
+  times(n) %do% 
+    simPopLE(...) %>%
+    write_rds(paste0("data/",name,".rds")) 
+    return(paste0(name, " completed!"))
+    gc()
 }
-
-
-
-
 
