@@ -5,6 +5,12 @@ library(tidyverse)
 library(svd)
 library(foreach)
 library(fanc)
+library(GenABEL)
+library(MASS)
+library(Matrix)
+library(survival)
+library(lme4)
+source("FAM-MDR/mbmdr_gaussian.R")
 tr <- psych::tr
 map <- purrr::map
 
@@ -481,10 +487,16 @@ episfa_sim <- function(n_rep = 100, recursion = 5, cvfolds = 10, ncores = NULL,s
       benchmark = benchmark))
 }
 
+
 interDiscover <- function(candidate, inters){
   if (!is.null(inters)){
-    in_inters <- str_detect(candidate, inters) %>%
+    in_inters1 <- str_detect(candidate, paste0(inters,c("$|","[^0-9]"),collapse = "")) %>%
       sum() 
+    in_inters2 <- str_detect(inters, paste0(candidate,c("$|","[^0-9]"), collapse = ""))  %>%
+      sum() 
+    in_inters <- in_inters1 + in_inters2
+#    print(in_inters1)
+#    print(in_inters2)
     return(ifelse(in_inters == 0, 1 ,0))
   } else {
     return(1)
@@ -503,6 +515,7 @@ simResults <- function(sim_control, sfa_control, n_rep = 100, recursion = 2, cvf
   sim_param <- sim_control %>% 
     setNames(c("n", "snp_num", "maf","p","int_eff","int_lev","int_num")) %>%
     as.list
+  print(sim_param)
   scene <- episfa_sim(n_rep, 
                     recursion,
                     cvfolds, 
@@ -634,7 +647,7 @@ as.pedigree <- function(dat){
 
 as.pheno <- function(dat){
   cov <- paste0("cov",1:10)
-  pheno <- dat[,c("Y","sex","age",cov),with = FALSE] %>%
+  pheno <- dat[,c("Y","sex","age",cov,"fid"),with = FALSE] %>%
     as.data.frame()
   return(pheno)
 }
@@ -646,13 +659,16 @@ kinship_sib <- function(dat){
   return(kin)
 }
 
-formBuild <- function(outcome, num_SNPs, covs = NULL, strata = NULL){
+formBuild <- function(outcome, num_SNPs, covs = NULL, strata = NULL, rem = FALSE){
   SNPs <- paste0("SNP",1:num_SNPs) %>% c(covs)
   if (is.null(strata)){
     form <- paste0(outcome,"~", paste0(SNPs,collapse = "+")) %>%
       as.formula()
-  } else {
+  } else if (rem == FALSE) {
     form <- paste0(outcome,"~", paste0(SNPs,collapse = "+"), "+strata(",strata,")") %>%
+      as.formula() 
+  } else {
+    form <- paste0(outcome,"~", paste0(SNPs,collapse = "+"), "+(1|",strata,")") %>%
       as.formula() 
   }
   return(form)
@@ -676,7 +692,7 @@ permuteY <- function(Y){
   return(Y)
 }
 
-fammdr <- function(dat,null_p = NULL, P = 0.1){
+fammdr <- function(dat,null_p = NULL, P = 0.1, dim = 2){
   SNP_names <- colnames(dat) %>% str_subset("^SNP[0-9]*$")
   nsnp <- length(SNP_names)
   SNPS <- as.SNPs(dat, nsnp)
@@ -685,26 +701,28 @@ fammdr <- function(dat,null_p = NULL, P = 0.1){
   SNPs.factor <- map_dfc(SNPS, as.factor)
   genopheno <- bind_cols(SNPs.factor,phenotype)
   # kin <- kinship(pedigree[[2]][1:4],pedigree[[3]][1:4],pedigree[[4]][1:4])
-  kin <- kinship_sib(pedigree)
-  rownames(kin) <- 1:nrow(genopheno)
-  colnames(kin) <- 1:nrow(genopheno)
-  form <- formBuild("Y",nsnp)
-  Yfit = polygenic(form,kin,genopheno,trait.type="binomial", quiet = TRUE)
-  yres <- Yfit$pgresidualY
+ 
+  form <- formBuild("Y",nsnp,strata = "fid",rem = TRUE)
+  Yfit <- lme4::glmer(form, data = genopheno,family = binomial(link = "logit"),nAGQ = 0,control = glmerControl(calc.derivs = FALSE)) %>%
+    summary()
+  yres <- Yfit$residuals
   
   for (j in 1:ncol(SNPS)) SNPS[,j] <- as.factor(SNPS[,j])
   EXPO <- list()
   EXPO[["0"]] <- (SNPS==0)
   EXPO[["1"]] <- (SNPS==1)
   EXPO[["2"]] <- (SNPS==2)
-  mdr <- MBMDR(yres,EXPO,SNPS,ESTRAT =NULL,PVAL=P,dimen=2,first.model=NULL,AJUST=0,list.models=NULL,correction=F)
-  m <- which.min(mdr[,6])
-  SNPs <- mdr[m,1:2]
+  mdr <- MBMDR(yres,EXPO,SNPS,ESTRAT =NULL,PVAL=P,dimen=dim,first.model=NULL,AJUST=0,list.models=NULL,correction=F)
+  n_col_mdr <- ncol(mdr)
+  m <- which.min(as.numeric(mdr[,n_col_mdr]))
+  SNPs <- mdr[m,(n_col_mdr - 4):1]
   inters <- paste0("SNP",SNPs, collapse = "")
-  p_min <-  mdr[m,6] %>% as.numeric()
+  p_min <-  mdr[m,n_col_mdr] %>% as.numeric()
+  sprintf("Sample: interaction %s : %f",  inters, p_min) %>% 
+  print()
   if (!is.null(null_p)){
     if (p_min <= null_p){
-      p_val <- c(p_min) %>% setNames(intersS)
+      p_val <- c(p_min) %>% setNames(inters)
       return(p_val)
     } else {
       return(NULL)
@@ -737,7 +755,7 @@ fammdr <- function(dat,null_p = NULL, P = 0.1){
   # }
 }
 
-fammdr_sim <- function(n_rep = 100,P = 0.5,null_p = NULL, ncores = NULL,sim_func = simPopLE_l2_sp, sim_control = list(), verbose = TRUE){
+fammdr_sim <- function(n_rep = 100,P = 0.1,null_p = NULL, ncores = NULL,sim_func = simPopLE_l2_sp, sim_control = list(), verbose = TRUE){
   if (is.null(ncores)){
     ncores <- detectCores(logical = FALSE)
   }
@@ -748,13 +766,13 @@ fammdr_sim <- function(n_rep = 100,P = 0.5,null_p = NULL, ncores = NULL,sim_func
   registerDoParallel(cl)
   ## hyperparameters
   num_interact <- sim_control[["int_num"]]
-  
+  lev_interact <- sim_control[["int_lev"]]
   global_funcs <- lsf.str(.GlobalEnv) %>% as.vector()
   ## looping
   tryCatch({
     benchmark <- foreach(i = 1:n_rep, 
                          .export = global_funcs, 
-                         .packages = c("purrr","stringr","GenABEL","dplyr","sigmoid","truncnorm","data.table","cvTools", "foreach","Matrix"),
+                         .packages = c("purrr","stringr","lme4","dplyr","sigmoid","truncnorm","data.table","cvTools", "foreach","Matrix"),
                          .verbose = verbose) %dopar% {
                            #timing
                            time_start <- Sys.time()
@@ -763,7 +781,7 @@ fammdr_sim <- function(n_rep = 100,P = 0.5,null_p = NULL, ncores = NULL,sim_func
                            inters <- interSNP(simdata) %>% map_chr(paste0, collapse = "") 
                            snp_name <- colnames(simdata) %>% str_subset('^SNP[0-9]+$')
                            # fammdr runsss
-                           result_mdr <- fammdr(simdata, null_p, P)
+                           result_mdr <- fammdr(simdata, null_p, P, lev_interact)
                            if (is.null(null_p)){
                              return(result_mdr)
                            }
@@ -777,9 +795,9 @@ fammdr_sim <- function(n_rep = 100,P = 0.5,null_p = NULL, ncores = NULL,sim_func
                            true_positive <- 0
                            true_positive_any <- 0
                            true_positive_all <- 0
-                           
-                           inter_names <-names(na.omit(result_mdr))
-                           if (!is.null(inter_names)){
+
+                           if (!is.null(result_mdr)){
+                             inter_names <-names(result_mdr)
                              false_positive <- map_dbl(inter_names, interDiscover,inters) %>%
                                sum()
                              false_positive_any <- ifelse(false_positive > 0, 1, 0)
@@ -804,7 +822,7 @@ fammdr_sim <- function(n_rep = 100,P = 0.5,null_p = NULL, ncores = NULL,sim_func
                          }
     if (is.null(null_p)){
       benchmark <- as.numeric(benchmark) %>% sort()
-      p95 <- benchmark[round(n_rep * 0.95)]
+      p95 <- benchmark[round(n_rep * 0.05)]
       stopCluster(cl)
       return(p95)
     }
