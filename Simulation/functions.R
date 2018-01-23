@@ -5,12 +5,6 @@ library(tidyverse)
 library(svd)
 library(foreach)
 library(fanc)
-library(GenABEL)
-library(MASS)
-library(Matrix)
-library(survival)
-library(lme4)
-source("FAM-MDR/mbmdr_gaussian.R")
 tr <- psych::tr
 map <- purrr::map
 
@@ -86,12 +80,45 @@ tuneSfa <- function(train, val, nfactor){
                        factors = nfactor)
   lists <- c(result$loadings)
 }
+sim_sib_stratify <- function(n, snp_num, int_eff, num_strata, mafs, ps, proportion){
+  func <- sib_sim(num_strata,
+                  mafs,
+                  ps,
+                  proportion,
+                  simControl = list(N = n, 
+                                    num_SNP = snp_num, 
+                                    main_effect = 1.5,
+                                    r = 0,
+                                    interaction_effect = int_eff,
+                                    cov_effect = 1, 
+                                    level = int_lev,
+                                    num_parents = 0, 
+                                    num_sib = 2, 
+                                    num_main = 0,
+                                    num_interact = 1,
+                                    model = "logistic",
+                                    genetic_model = "additive",
+                                    scale_weibull = 80,
+                                    shape_weibull = 4,
+                                    age_lower = 20,
+                                    age_higher = 80,
+                                    sex_effect = 1,
+                                    age_effect = 1,
+                                    age_mean = 50,
+                                    age_varb = 10,
+                                    age_varw = 5,
+                                    num_cov = 10,
+                                    cov_sigma = NULL,
+                                    population = FALSE))
+                                    
+}
 
 simPopLE_l2_sp <- function(n, snp_num, maf, p, int_eff, int_lev,int_num, m_eff = NULL, mode = NULL){
           func <- simPopLE(n,
                      num_SNP = snp_num,
                      MAF = maf,  
                      main_effect = 1.5, 
+                     r = 0,
                      interaction_effect =int_eff, 
                      margin_effect = m_eff,
                      inter_mode = mode,
@@ -119,6 +146,38 @@ simPopLE_l2_sp <- function(n, snp_num, maf, p, int_eff, int_lev,int_num, m_eff =
           return(func)
 }
 
+simPopLD_l2_sp <- function(n, snp_num, maf, p, int_eff, int_lev,int_num, ld, m_eff = NULL, mode = NULL){
+  func <- simPopLE(n,
+                   num_SNP = snp_num,
+                   MAF = maf,  
+                   main_effect = 1.5, 
+                   r = ld,
+                   interaction_effect =int_eff, 
+                   margin_effect = m_eff,
+                   inter_mode = mode,
+                   cov_effect = 1, 
+                   level = int_lev,
+                   num_parents = 0, 
+                   num_sib = 2, 
+                   num_main = 0,
+                   num_interact = int_num,
+                   model = "logistic",
+                   genetic_model = "additive",
+                   p = p,
+                   scale_weibull = 80,
+                   shape_weibull = 4,
+                   age_lower = 20,
+                   age_higher = 80,
+                   sex_effect = 1,
+                   age_effect = 1,
+                   age_mean = 50,
+                   age_varb = 10,
+                   age_varw = 5,
+                   num_cov = 10,
+                   cov_sigma = NULL,
+                   population = FALSE)
+  return(func)
+}
 
 simPopLE_l2_sp_wp <- function(n, snp_num, maf, p, int_eff, int_lev,int_num, m_eff = NULL, mode = NULL){
   func <- simPopLE(n,
@@ -190,7 +249,7 @@ simVal <- function(dat, subset = NULL){
   return(list(cc= result_cc, co = result_co))
 }
 
-cv.episfa <- function(x, nfolds,nfactor = NULL,sparsity = 0.05, type = "data", contrast = NULL, ...){
+cv.episfa <- function(x, nfolds,nfactor = NULL, type = "data", contrast = NULL, ...){
  
   # function to extract best gamma and rho
   best_gr <- function(stat, nzl, n = 270){
@@ -222,25 +281,25 @@ cv.episfa <- function(x, nfolds,nfactor = NULL,sparsity = 0.05, type = "data", c
   if (is.null(nfactor)){
     nfactor <- sparsity*ncol(x)
   } 
+  
   print(paste0("The size of matrix is ", dim(x)))
 #  print(paste0("The number of factors is ", nfactor))
   folds <- cvFolds(nrow(x), K=nfolds)
   # cross validation
-  r <- foreach(i=1:nfolds, .verbose = FALSE) %do% {
+  r <- foreach(i=1:nfolds, .verbose = TRUE) %do% {
 #    print(paste0("cross validate round",i))
     timestamp()
     train <- x[folds$subsets[folds$which != i], ]
     validation <- x[folds$subsets[folds$which == i], ]
-    if (type == "data"){
+    if (is.null(contrast) & type == "data"){
       result <- fanc(train, factors = nfactor, ...)
-    } else if(type == "covmat"){
-        if (!is.null(contrast)){
-          cov_mat <- cor(train) - cor(contrast) + diag(ncol(train))
-        } else {
-          cov_mat <- cor(train)
-        }
-      result <- fanc(factors = nfactor, covmat = cov_mat, n.obs = nrow(train),...)
-    } else if(type == "poly"){
+    } else if (!is.null(contrast) & type == "data"){
+        n1 <- nrow(train)
+        n2 <- nrow(contrast)
+        n3 <- round((n1 - 3)*(n2 - 3)/(n1 + n2 - 6) + 3)
+        cov_mat <- partial(train, contrast)
+        result <- fanc(covmat = cov_mat, factors = nfactor, n.obs = n3,...)
+      } else if (type == "poly") {
       result <- fanc(factors = nfactor, covmat = psych::polychoric(train)$rho, n.obs = nrow(train),...)
     } else {
       stop("type must be data or covmat or poly")
@@ -359,25 +418,30 @@ effRemove <- function(consistency, data){
   return(dat)
 }
 
-episfa <- function(dat, nfolds, recursion = 5, criteria = "ebic",...){
+episfa <- function(dat, nfolds, recursion = 1, criteria = "ebic",contrast = NULL, ...){
   if (criteria  %in% c("ebic","hbic")){
     criteria <- paste0("nz_",criteria,c(1, 0.75, 0.5))
   } else {
     criteria <-  paste0("nz_",criteria)
   }
   inters <- character()
+  if (isSymmetric(dat)){
+  type <- "covmat"
+  } else {
+    type <- "data"
+  }
   ## recursion
   for(i in 1:recursion) {
 #    print(paste0("Searching for epistatic effects: number ",i,", ..."))
-    result <- cv.episfa(dat, nfolds, nfactor = 1, type = "data",...)
+    result <- cv.episfa(dat, nfolds, 1, type, contrast, ...)
     consistency <- map(1:length(criteria),~cv.consistency(result, criteria[.]))
-    print(consistency)
+#    print(consistency)
     # consistency <- consist
     elements <- lengths(consistency)
     if (sum(elements) >= 1) {
       effect <- consistency[elements >= 1][[1]][1]
       name <- names(effect)
-#      print(paste0("Found interaction ",name))
+      print(paste0("Found interaction ",name))
       dat <- effRemove(name, dat)
        if (is.null(dat) || ncol(dat) < 2){
          break()
@@ -392,7 +456,7 @@ episfa <- function(dat, nfolds, recursion = 5, criteria = "ebic",...){
   return(inters)
 }
     
-episfa_sim <- function(n_rep = 100, recursion = 5, cvfolds = 10, ncores = NULL,sim_func = simPopLE_l2_sp, sim_control = list(), criteria = "ebic",...){
+episfa_sim <- function(n_rep = 100, recursion = 5, cvfolds = 10, ncores = NULL,sim_func = simPopLE_l2_sp, sim_control = list(), criteria = "ebic",ld = FALSE,...){
     if (is.null(ncores)){
       ncores <- detectCores(logical = FALSE)
     }
@@ -407,8 +471,8 @@ episfa_sim <- function(n_rep = 100, recursion = 5, cvfolds = 10, ncores = NULL,s
     ## looping
     benchmark <- foreach(i = 1:n_rep, 
                          .export = global_funcs, 
-                         .packages = c("purrr","stringr","fanc","dplyr","sigmoid","truncnorm","data.table","cvTools", "foreach"),
-                         .verbose = FALSE) %dopar% {
+                         .packages = c("purrr","stringr","fanc","dplyr","sigmoid","truncnorm","data.table","cvTools", "foreach","psych"),
+                         .verbose = TRUE) %dopar% {
       #timing
       time_start <- Sys.time()
       # simulate data
@@ -416,8 +480,14 @@ episfa_sim <- function(n_rep = 100, recursion = 5, cvfolds = 10, ncores = NULL,s
       inters <- interSNP(simdata) %>% map_chr(paste0, collapse = "") 
       snp_name <- colnames(simdata) %>% str_subset('^SNP[0-9]+$')
       df_co <- simdata[Y == 1,snp_name, with = FALSE] %>% as.matrix()
-      # episfa runsss
-      result_episfa <- episfa(df_co, cvfolds, recursion, criteria, ...)
+      control <- simdata[Y == 0, snp_name, with = FALSE] %>% as.matrix()
+      if (ld == TRUE){
+        contrast <- control
+      } else {
+        contrast <- NULL
+      }
+      # episfa run
+      result_episfa <- episfa(df_co, cvfolds, recursion, criteria, contrast, ...)
       # inters <- c("SNP1SNP2","SNP3SNP4","SNP5SNP6")
       # result_episfa <- list(SNP1SNP2 = 3, SNP3SNP4 = 2, SNP5SNP7 = 1)
       ## false_positive 1: any unknown interaction effect is false dicovery
@@ -487,7 +557,6 @@ episfa_sim <- function(n_rep = 100, recursion = 5, cvfolds = 10, ncores = NULL,s
       benchmark = benchmark))
 }
 
-
 interDiscover <- function(candidate, inters){
   if (!is.null(inters)){
     in_inters1 <- str_detect(candidate, paste0(inters,c("$|","[^0-9]"),collapse = "")) %>%
@@ -495,8 +564,8 @@ interDiscover <- function(candidate, inters){
     in_inters2 <- str_detect(inters, paste0(candidate,c("$|","[^0-9]"), collapse = ""))  %>%
       sum() 
     in_inters <- in_inters1 + in_inters2
-#    print(in_inters1)
-#    print(in_inters2)
+    #    print(in_inters1)
+    #    print(in_inters2)
     return(ifelse(in_inters == 0, 1 ,0))
   } else {
     return(1)
@@ -511,41 +580,23 @@ getListElement <- function(.l, name, simplify = TRUE){
   return(element)
 }
 
-simResults <- function(sim_control, sfa_control, n_rep = 100, recursion = 2, cvfolds = 5,ncores = NULL, sim_func = simPopLE_l2_sp, criteria = "ebic", save = TRUE){
-  sim_param <- sim_control %>% 
-    setNames(c("n", "snp_num", "maf","p","int_eff","int_lev","int_num")) %>%
-    as.list
-  print(sim_param)
+simResults <- function(sim_control, sfa_control, n_rep = 100, recursion = 2, cvfolds = 5,ncores = NULL, sim_func = simPopLE_l2_sp,ld=FALSE, criteria = "ebic", save = TRUE){
+  #  print(length(sim_control))
+  sim_param <- sim_control %>% as.list
   scene <- episfa_sim(n_rep, 
-                    recursion,
-                    cvfolds, 
-                    ncores,
-                  sim_func,
-                   sim_param, 
-                   criteria,
-                    sfa_control)
+                      recursion,
+                      cvfolds, 
+                      ncores,
+                      sim_func,
+                      sim_param, 
+                      criteria,
+                      ld,
+                      sfa_control)
   name <- pmap_chr(sim_param, paste, sep = '-')
   if (save == TRUE){
     write_rds(scene,paste0("results/intern1p05", name,".rds"))
   }
   return(scene)
-}
-
-svd_compress <- function(dat, depth = NULL){
-  n <- nrow(dat)
-  p <- ncol(dat)
-  dat <- scale(dat)
-  r <- svd(dat)
-  if (is.null(depth)){
-      var_p <- r$d**2/sum(r$d**2)*p
-      depth <- sum(var_p > 1)
-  }
-  dat_comp <- r$u[,1:depth] %*% diag(r$d[1:depth]) %*% t(r$v[,1:depth])
-  v_preserve <- diag(var(dat_comp))
-  variance <- 1 - v_preserve
-  dat_comp <- dat_comp + MASS::mvrnorm(n, rep(0,p), diag(variance))
-  colnames(dat_comp) <- colnames(dat) 
-  return(dat_comp)
 }
 
 cov_diff <- function(co, ctrl){
@@ -564,11 +615,13 @@ HBIC <- function(BIC, p, df, gamma){
   return(BIC - log(p)*df + 2*gamma*log(p)*df)
 }
 
-partial <- function(y, X){
-  X <- cbind(rep(1,nrow(X)),X)
-  hat <- X %*% solve((t(X)%*%X)) %*% t(X) %*% y 
-  res <- y - hat
-  return(as.vector(res))
+
+partial <- function(case, control){
+  cormat_case <- cor(case) %>% fisherz()
+  cormat_control <- cor(control) %>% fisherz()
+  cor_cc <- (cormat_case - cormat_control) %>% fisherz2r() 
+  diag(cor_cc) <- 1
+  return(cor_cc)
 }
 
 
@@ -613,13 +666,84 @@ stanSurf <- function(sib, pat, type = "pat"){
   return(mean)
 }
 
-corrS <- function(sib_geno, parent_geno){
-  parental_type <- map(parent_geno, genoType) 
-  sib_sub <- map2_dfc(sib_geno, parental_type, stanSurf)
-  sib_geno <- sib_geno - sib_sub
-  sib_geno <- as.matrix(sib_geno)
-  X <- t(sib_geno) %*% sib_geno /nrow(sib_geno)
-  return(X)
+corrS <- function(dat, famid = "fid", bw = "w"){
+  SNP_names <- str_subset(colnames(dat),"^SNP[0-9]*$")
+  df_co <- setDT(dat)[Y == 1, SNP_names, with = FALSE] 
+  df_co_fid <- dat[[famid]][dat$Y == 1]
+  df_co_strata <- map_dfc(setDT(dat)[,SNP_names, with = FALSE],stratas)
+#  dat_surf <- map2_dfc(dat[,SNP_names,with = FALSE], df_co_strata, stratScale, df_co_fid)
+  if (bw == "w"){
+    dat_surf <- map2_dfc(df_co, df_co_strata, stratScale, df_co_fid)
+  } else {
+    dat_surf <- map2_dfc(df_co, df_co_strata, stratMean, df_co_fid)
+  }
+  return(cor(dat_surf))
+}
+
+corr <- function(vec1,vec2){
+  non_zero <- (vec1*vec2) != 0
+  vec1 <- vec1[non_zero]
+  vec2 <- vec2[non_zero]
+  r <- vec1 %*% vec2 /(sqrt((vec1 %*% vec1)*(vec2 %*% vec2)))
+  return(r)
+}
+
+stratas <- function(vec){
+  num <- length(vec)
+  s1geno <- vec[seq(1,num,2)]
+  s2geno <- vec[seq(2,num,2)]
+  screen <- s1geno != s2geno
+  non_info <- which(!screen)
+  strata <- numeric(num/2)
+  strata[which(screen)] <- s1geno[screen] + s2geno[screen]
+  strata[non_info] <- 9
+  return(strata)
+} 
+
+stratScale <- function(vec, strata, fid){
+  index <- match(fid, unique(fid))
+  strata_co <- strata[index]
+#  strata <- rep(strata,each = 2)
+  vec[strata_co == -1] <- vec[strata_co == -1] - mean(vec[strata_co == -1])
+  vec[strata_co == 0] <- vec[strata_co == 0] - mean(vec[strata_co == 0])
+  vec[strata_co == 1] <- vec[strata_co == 1] - mean(vec[strata_co == 1])
+  vec[strata_co == 9] <- 0
+  return(vec)
+}
+
+stratMean <- function(vec, strata, fid){
+  index <- match(fid, unique(fid))
+  strata_co <- strata[index]
+#  strata <- rep(strata,each = 2)
+  vec[strata_co == -1] <- mean(vec[strata_co == -1])
+  vec[strata_co == 0] <- mean(vec[strata_co == 0])
+  vec[strata_co == 1] <- mean(vec[strata_co == 1])
+  return(vec)
+}
+corRank <- function(cormat){
+  order_b <- rank(cormat[upper.tri(cormat)])
+  n <- length(order_b)
+  rankb <- matrix(0, nrow(cormat), ncol(cormat))
+  rankb[upper.tri(rankb)] <- order_b
+  rankb[lower.tri(rankb)] <- t(rankb)[lower.tri(rankb)]
+  diag(rankb) <- NA
+  return(n - rankb + 1)
+}
+
+integrateCorr <- function(dat,nsnps,Y = "Y", famid = "fid", weights = NULL){
+  if (is.null(weights)){
+    weights <-c(1/sqrt(2),1/sqrt(2))
+  } else if (length(weights) != 2){
+    stop("length of weights should be 2")
+  }
+  corr_b <- corrS(dat, famid, bw = "b")
+  corr_w <- corrS(dat, famid, bw = "w")
+  zw <- fisherz(corr_w)*sqrt(sum(dat[[Y]]) - 3)
+  zb <- ((corRank(corr_b) - 0.5)/choose(nsnps,2)) %>% qnorm()
+  z_int <- (zw*weights[2] - zb*weights[1])*sqrt(2)/sqrt(sum(dat[[Y]]) - 3) 
+  corr_int <- fisherz2r(z_int)
+  diag(corr_int) <- 1
+  return(corr_int)
 }
 
 permuteMatrix <- function(mat, margin = 2){
@@ -647,7 +771,7 @@ as.pedigree <- function(dat){
 
 as.pheno <- function(dat){
   cov <- paste0("cov",1:10)
-  pheno <- dat[,c("Y","sex","age",cov,"fid"),with = FALSE] %>%
+  pheno <- dat[,c("Y","sex","age",cov),with = FALSE] %>%
     as.data.frame()
   return(pheno)
 }
@@ -659,16 +783,13 @@ kinship_sib <- function(dat){
   return(kin)
 }
 
-formBuild <- function(outcome, num_SNPs, covs = NULL, strata = NULL, rem = FALSE){
+formBuild <- function(outcome, num_SNPs, covs = NULL, strata = NULL){
   SNPs <- paste0("SNP",1:num_SNPs) %>% c(covs)
   if (is.null(strata)){
     form <- paste0(outcome,"~", paste0(SNPs,collapse = "+")) %>%
       as.formula()
-  } else if (rem == FALSE) {
-    form <- paste0(outcome,"~", paste0(SNPs,collapse = "+"), "+strata(",strata,")") %>%
-      as.formula() 
   } else {
-    form <- paste0(outcome,"~", paste0(SNPs,collapse = "+"), "+(1|",strata,")") %>%
+    form <- paste0(outcome,"~", paste0(SNPs,collapse = "+"), "+strata(",strata,")") %>%
       as.formula() 
   }
   return(form)
@@ -692,7 +813,7 @@ permuteY <- function(Y){
   return(Y)
 }
 
-fammdr <- function(dat,null_p = NULL, P = 0.1, dim = 2){
+fammdr <- function(dat,null_p = NULL, P = 0.1){
   SNP_names <- colnames(dat) %>% str_subset("^SNP[0-9]*$")
   nsnp <- length(SNP_names)
   SNPS <- as.SNPs(dat, nsnp)
@@ -701,7 +822,7 @@ fammdr <- function(dat,null_p = NULL, P = 0.1, dim = 2){
   SNPs.factor <- map_dfc(SNPS, as.factor)
   genopheno <- bind_cols(SNPs.factor,phenotype)
   # kin <- kinship(pedigree[[2]][1:4],pedigree[[3]][1:4],pedigree[[4]][1:4])
- 
+  
   form <- formBuild("Y",nsnp,strata = "fid",rem = TRUE)
   Yfit <- lme4::glmer(form, data = genopheno,family = binomial(link = "logit"),nAGQ = 0,control = glmerControl(calc.derivs = FALSE)) %>%
     summary()
@@ -712,14 +833,14 @@ fammdr <- function(dat,null_p = NULL, P = 0.1, dim = 2){
   EXPO[["0"]] <- (SNPS==0)
   EXPO[["1"]] <- (SNPS==1)
   EXPO[["2"]] <- (SNPS==2)
-  mdr <- MBMDR(yres,EXPO,SNPS,ESTRAT =NULL,PVAL=P,dimen=dim,first.model=NULL,AJUST=0,list.models=NULL,correction=F)
+  mdr <- MBMDR(yres,EXPO,SNPS,ESTRAT =NULL,PVAL=P,dimen=2,first.model=NULL,AJUST=0,list.models=NULL,correction=F)
   n_col_mdr <- ncol(mdr)
   m <- which.min(as.numeric(mdr[,n_col_mdr]))
   SNPs <- mdr[m,(n_col_mdr - 4):1]
   inters <- paste0("SNP",SNPs, collapse = "")
   p_min <-  mdr[m,n_col_mdr] %>% as.numeric()
   sprintf("Sample: interaction %s : %f",  inters, p_min) %>% 
-  print()
+    print()
   if (!is.null(null_p)){
     if (p_min <= null_p){
       p_val <- c(p_min) %>% setNames(inters)
@@ -755,7 +876,8 @@ fammdr <- function(dat,null_p = NULL, P = 0.1, dim = 2){
   # }
 }
 
-fammdr_sim <- function(n_rep = 100,P = 0.1,null_p = NULL, ncores = NULL,sim_func = simPopLE_l2_sp, sim_control = list(), verbose = TRUE){
+
+fammdr_sim <- function(n_rep = 100,P = 0.5,null_p = NULL, ncores = NULL,sim_func = simPopLE_l2_sp, sim_control = list(), verbose = TRUE){
   if (is.null(ncores)){
     ncores <- detectCores(logical = FALSE)
   }
@@ -766,13 +888,13 @@ fammdr_sim <- function(n_rep = 100,P = 0.1,null_p = NULL, ncores = NULL,sim_func
   registerDoParallel(cl)
   ## hyperparameters
   num_interact <- sim_control[["int_num"]]
-  lev_interact <- sim_control[["int_lev"]]
+  
   global_funcs <- lsf.str(.GlobalEnv) %>% as.vector()
   ## looping
   tryCatch({
     benchmark <- foreach(i = 1:n_rep, 
                          .export = global_funcs, 
-                         .packages = c("purrr","stringr","lme4","dplyr","sigmoid","truncnorm","data.table","cvTools", "foreach","Matrix"),
+                         .packages = c("purrr","stringr","GenABEL","dplyr","sigmoid","truncnorm","data.table","cvTools", "foreach","Matrix"),
                          .verbose = verbose) %dopar% {
                            #timing
                            time_start <- Sys.time()
@@ -781,7 +903,7 @@ fammdr_sim <- function(n_rep = 100,P = 0.1,null_p = NULL, ncores = NULL,sim_func
                            inters <- interSNP(simdata) %>% map_chr(paste0, collapse = "") 
                            snp_name <- colnames(simdata) %>% str_subset('^SNP[0-9]+$')
                            # fammdr runsss
-                           result_mdr <- fammdr(simdata, null_p, P, lev_interact)
+                           result_mdr <- fammdr(simdata, null_p, P)
                            if (is.null(null_p)){
                              return(result_mdr)
                            }
@@ -795,9 +917,9 @@ fammdr_sim <- function(n_rep = 100,P = 0.1,null_p = NULL, ncores = NULL,sim_func
                            true_positive <- 0
                            true_positive_any <- 0
                            true_positive_all <- 0
-
-                           if (!is.null(result_mdr)){
-                             inter_names <-names(result_mdr)
+                           
+                           inter_names <-names(na.omit(result_mdr))
+                           if (!is.null(inter_names)){
                              false_positive <- map_dbl(inter_names, interDiscover,inters) %>%
                                sum()
                              false_positive_any <- ifelse(false_positive > 0, 1, 0)
@@ -822,7 +944,7 @@ fammdr_sim <- function(n_rep = 100,P = 0.1,null_p = NULL, ncores = NULL,sim_func
                          }
     if (is.null(null_p)){
       benchmark <- as.numeric(benchmark) %>% sort()
-      p95 <- benchmark[round(n_rep * 0.05)]
+      p95 <- benchmark[round(n_rep * 0.95)]
       stopCluster(cl)
       return(p95)
     }
@@ -868,9 +990,7 @@ fammdr_sim <- function(n_rep = 100,P = 0.1,null_p = NULL, ncores = NULL,sim_func
 
 
 simResults_mdr <- function(sim_control,null_p = NULL, n_rep = 100,  P = 0.1,ncores = NULL, sim_func = simPopLE_l2_sp, save = TRUE, verbose = TRUE){
-  sim_param <- sim_control %>% 
-    setNames(c("n", "snp_num", "maf","p","int_eff","int_lev","int_num")) %>%
-    as.list
+  sim_param <- sim_control %>% as.list
   
   scene <- fammdr_sim(n_rep, 
                       P, 
@@ -885,13 +1005,9 @@ simResults_mdr <- function(sim_control,null_p = NULL, n_rep = 100,  P = 0.1,ncor
     write_rds(scene,paste0("results/intern1p05_mdr", name,".rds"))
   }
   return(scene)
-<<<<<<< HEAD
 }  
 
 
-=======
-}
->>>>>>> origin/master
 # sib_geno <- test1200[!is.na(mid),] %>% arrange(fid)
 # sib_geno <- sib_geno[,1:200]
 # pat_geno <- test1200[is.na(mid),] %>% arrange(fid)
