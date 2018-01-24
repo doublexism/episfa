@@ -249,7 +249,7 @@ simVal <- function(dat, subset = NULL){
   return(list(cc= result_cc, co = result_co))
 }
 
-cv.episfa <- function(x, nfolds,nfactor = NULL, type = "data", contrast = NULL, ...){
+cv.episfa <- function(x, nfolds,nfactor = NULL, type = "data", contrast = NULL, sfa_control = list(),...){
  
   # function to extract best gamma and rho
   best_gr <- function(stat, nzl, n = 270){
@@ -298,7 +298,7 @@ cv.episfa <- function(x, nfolds,nfactor = NULL, type = "data", contrast = NULL, 
         n2 <- nrow(contrast)
         n3 <- round((n1 - 3)*(n2 - 3)/(n1 + n2 - 6) + 3)
         cov_mat <- partial(train, contrast)
-        result <- fanc(covmat = cov_mat, factors = nfactor, n.obs = n3,...)
+        result <- fanc(covmat = cov_mat, factors = nfactor, n.obs = n3,control = sfa_control, ...)
       } else if (type == "poly") {
       result <- fanc(factors = nfactor, covmat = psych::polychoric(train)$rho, n.obs = nrow(train),...)
     } else {
@@ -418,7 +418,8 @@ effRemove <- function(consistency, data){
   return(dat)
 }
 
-episfa <- function(dat, nfolds, recursion = 1, criteria = "ebic",contrast = NULL, ...){
+episfa <- function(dat, nfolds, recursion = 1, criteria = "ebic",contrast = NULL, sfa_control = list(),...){
+  criteria <- str_to_lower(criteria)
   if (criteria  %in% c("ebic","hbic")){
     criteria <- paste0("nz_",criteria,c(1, 0.75, 0.5))
   } else {
@@ -433,7 +434,7 @@ episfa <- function(dat, nfolds, recursion = 1, criteria = "ebic",contrast = NULL
   ## recursion
   for(i in 1:recursion) {
 #    print(paste0("Searching for epistatic effects: number ",i,", ..."))
-    result <- cv.episfa(dat, nfolds, 1, type, contrast, ...)
+    result <- cv.episfa(dat, nfolds, 1, type, contrast, sfa_control, ...)
     consistency <- map(1:length(criteria),~cv.consistency(result, criteria[.]))
 #    print(consistency)
     # consistency <- consist
@@ -456,14 +457,14 @@ episfa <- function(dat, nfolds, recursion = 1, criteria = "ebic",contrast = NULL
   return(inters)
 }
     
-episfa_sim <- function(n_rep = 100, recursion = 5, cvfolds = 10, ncores = NULL,sim_func = simPopLE_l2_sp, sim_control = list(), criteria = "ebic",ld = FALSE,...){
+episfa_sim <- function(n_rep = 100, recursion = 5, cvfolds = 10, ncores = NULL,sim_func = simPopLE_l2_sp, sim_control = list(), criteria = "ebic",ld = FALSE,sfa_control = list(),...){
     if (is.null(ncores)){
       ncores <- detectCores(logical = FALSE)
     }
 #    sprintf("running on %i cores",ncores) %>% 
 #      print()
     ## make cluster
-    cl <- makeCluster(ncores,outfile = "info180110.txt",rscript_args = c("--no-init-file", "--no-site-file", "--no-environ"))
+    cl <- makeCluster(ncores,outfile = "info180124.txt",rscript_args = c("--no-init-file", "--no-site-file", "--no-environ"))
     registerDoParallel(cl)
     ## hyperparameters
     num_interact <- sim_control[["int_num"]]
@@ -487,7 +488,7 @@ episfa_sim <- function(n_rep = 100, recursion = 5, cvfolds = 10, ncores = NULL,s
         contrast <- NULL
       }
       # episfa run
-      result_episfa <- episfa(df_co, cvfolds, recursion, criteria, contrast, ...)
+      result_episfa <- episfa(df_co, cvfolds, recursion, criteria, contrast, sfa_control,...)
       # inters <- c("SNP1SNP2","SNP3SNP4","SNP5SNP6")
       # result_episfa <- list(SNP1SNP2 = 3, SNP3SNP4 = 2, SNP5SNP7 = 1)
       ## false_positive 1: any unknown interaction effect is false dicovery
